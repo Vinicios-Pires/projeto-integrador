@@ -1,0 +1,925 @@
+// =============================================================================
+// Painel Escolar Inteligente — schema do banco (Fase 0)
+//
+// Baseado no modelo de dados do sistema anterior (Supabase, 40 tabelas +
+// 3 enums), mas como PROJETO NOVO: não há cópia de dados do sistema antigo.
+//
+// Convenções:
+// - Nomes de modelos/colunas em snake_case, iguais aos do sistema anterior,
+//   para que a API devolva os dados no formato que o frontend já consome.
+// - `usuarios` substitui `auth.users` do Supabase (login próprio com JWT).
+// - Toda coluna que referencia outra tabela tem FK verificada pelo banco.
+// - `updated_at`: os triggers update_updated_at_column() viram @updatedAt.
+// - Não expressáveis no Prisma (SQL manual na migration inicial): CHECKs de
+//   status/prioridade/bimestre/dia_semana/tipo e o índice único parcial de
+//   tutorados (user_id, aluno_id) WHERE aluno_id IS NOT NULL.
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// -----------------------------------------------------------------------------
+// Enums
+// -----------------------------------------------------------------------------
+
+enum app_role {
+  professor
+  coordenador
+  direcao
+  vice_direcao
+  admin
+}
+
+enum tipo_bloco_horario {
+  aula
+  intervalo
+  almoco
+  planejamento
+  atpc
+  reuniao
+  outro
+}
+
+enum tipo_evento_escola {
+  reuniao
+  formacao
+  evento
+  avaliacao_externa
+  conselho
+  apoio_presencial
+  acompanhamento
+  observacao
+  visita
+  aviso
+}
+
+// -----------------------------------------------------------------------------
+// Identidade (substitui Supabase Auth)
+// -----------------------------------------------------------------------------
+
+/// Substitui auth.users do Supabase.
+model usuarios {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email             String   @unique
+  /// Hash bcrypt da senha.
+  senha_hash        String
+  /// true = precisa trocar a senha no próximo login (senha temporária gerada pelo admin).
+  deve_trocar_senha Boolean  @default(false)
+  created_at        DateTime @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  profile    profiles?
+  user_roles user_roles[]
+
+  turmas                   turmas[]
+  disciplinas              disciplinas[]
+  tipos_avaliacao          tipos_avaliacao[]
+  notas                    notas[]
+  planos_aula              planos_aula[]
+  ocorrencias_notebook     ocorrencias_notebook[]
+  provas                   provas[]
+  resultados_prova         resultados_prova[]
+  lembretes                lembretes[]
+  planejamentos            planejamentos_bimestrais[] @relation("planejamento_dono")
+  planejamentos_validados  planejamentos_bimestrais[] @relation("planejamento_validador")
+  replicabilidades         replicabilidades[]
+  tutorados                tutorados[]
+  tutoria_checkins         tutoria_checkins[]
+  tutoria_registros        tutoria_registros[]
+  tutoria_combinados       tutoria_combinados[]
+  ocorrencias_escolares    ocorrencias_escolares[]    @relation("ocorrencia_dono")
+  ocorrencias_respondidas  ocorrencias_escolares[]    @relation("ocorrencia_gestao")
+  diario_atividades        diario_atividades[]
+  diario_lancamentos       diario_lancamentos[]
+  diario_observacoes_aluno diario_observacoes_aluno[]
+  turma_disciplinas        turma_disciplinas[]
+  turma_membros            turma_membros[]
+  medias_arredondadas      medias_arredondadas[]
+  plano_anexos             plano_anexos[]
+  agenda_professor         agenda_professor[]
+  agenda_excecoes          agenda_excecoes[]
+  eventos_escola_criados   agenda_escola_eventos[]
+  apoios_criados           apoio_presencial[]         @relation("apoio_criador")
+  apoios_como_professor    apoio_presencial[]         @relation("apoio_professor")
+  apoios_como_responsavel  apoio_presencial[]         @relation("apoio_responsavel")
+  pdi_evidencias           pdi_evidencias[]
+  pdi_evidencia_documentos pdi_evidencia_documentos[]
+  tutoria_documentos       tutoria_documentos[]
+}
+
+model profiles {
+  id         String   @id @db.Uuid
+  nome       String   @default("")
+  email      String   @default("")
+  /// pendente | ativo | inativo
+  status     String   @default("ativo")
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  usuario usuarios @relation(fields: [id], references: [id], onDelete: Cascade)
+}
+
+model user_roles {
+  id      String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id String   @db.Uuid
+  role    app_role @default(professor)
+
+  usuario usuarios @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, role])
+}
+
+// -----------------------------------------------------------------------------
+// Estrutura escolar
+// -----------------------------------------------------------------------------
+
+model turmas {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nome        String
+  serie       String
+  turno       String    @default("Manhã")
+  ano_letivo  Int       @default(dbgenerated("EXTRACT(year FROM now())"))
+  capacidade  Int?      @default(35)
+  observacoes String?
+  /// regular | (outros tipos usados pelo frontend, ex.: eletiva)
+  tipo        String    @default("regular")
+  user_id     String?   @db.Uuid
+  created_at  DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime? @default(now()) @updatedAt @db.Timestamptz(6)
+
+  usuario usuarios? @relation(fields: [user_id], references: [id], onDelete: SetNull)
+
+  alunos                   alunos[]
+  tipos_avaliacao          tipos_avaliacao[]
+  planos_aula              planos_aula[]
+  ocorrencias_notebook     ocorrencias_notebook[]
+  provas                   provas[]
+  lembretes                lembretes[]
+  turma_disciplinas        turma_disciplinas[]
+  agenda_professor         agenda_professor[]
+  agenda_excecoes          agenda_excecoes[]
+  planejamentos_bimestrais planejamentos_bimestrais[]
+  diario_atividades        diario_atividades[]
+  diario_observacoes_aluno diario_observacoes_aluno[]
+  turma_membros            turma_membros[]
+  medias_arredondadas      medias_arredondadas[]
+  pdi_evidencias           pdi_evidencias[]
+}
+
+model alunos {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  turma_id        String?   @db.Uuid
+  nome            String
+  numero_chamada  Int?
+  serie           String?
+  data_nascimento DateTime? @db.Date
+  email           String?
+  telefone        String?
+  responsavel     String?
+  observacoes     String?
+  ativo           Boolean?  @default(true)
+  created_at      DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime? @default(now()) @updatedAt @db.Timestamptz(6)
+
+  turma turmas? @relation(fields: [turma_id], references: [id], onDelete: Cascade)
+
+  notas                    notas[]
+  resultados_prova         resultados_prova[]
+  tutorados                tutorados[]
+  diario_lancamentos       diario_lancamentos[]
+  diario_observacoes_aluno diario_observacoes_aluno[]
+  turma_membros            turma_membros[]
+  medias_arredondadas      medias_arredondadas[]
+}
+
+model disciplinas {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nome          String
+  professor     String?
+  carga_horaria Int?
+  cor           String?   @default("azul")
+  user_id       String    @db.Uuid
+  created_at    DateTime? @default(now()) @db.Timestamptz(6)
+
+  usuario usuarios @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  tipos_avaliacao          tipos_avaliacao[]
+  planos_aula              planos_aula[]
+  provas                   provas[]
+  lembretes                lembretes[]
+  turma_disciplinas        turma_disciplinas[]
+  agenda_professor         agenda_professor[]
+  agenda_excecoes          agenda_excecoes[]
+  planejamentos_bimestrais planejamentos_bimestrais[]
+  diario_atividades        diario_atividades[]
+  diario_observacoes_aluno diario_observacoes_aluno[]
+  medias_arredondadas      medias_arredondadas[]
+  pdi_evidencias           pdi_evidencias[]
+
+  @@index([user_id], map: "idx_disciplinas_user")
+}
+
+/// Quem (user_id) leciona qual disciplina em qual turma.
+model turma_disciplinas {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  turma_id      String   @db.Uuid
+  disciplina_id String   @db.Uuid
+  user_id       String   @db.Uuid
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  turma      turmas      @relation(fields: [turma_id], references: [id], onDelete: Cascade)
+  disciplina disciplinas @relation(fields: [disciplina_id], references: [id], onDelete: Cascade)
+  usuario    usuarios    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([turma_id, disciplina_id, user_id])
+  @@index([user_id], map: "idx_td_user")
+  @@index([turma_id], map: "idx_td_turma")
+  @@index([disciplina_id], map: "idx_td_disciplina")
+}
+
+/// Alunos vinculados a turmas não-regulares (ex.: eletivas).
+model turma_membros {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  turma_id   String   @db.Uuid
+  aluno_id   String   @db.Uuid
+  user_id    String   @db.Uuid
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  turma   turmas   @relation(fields: [turma_id], references: [id], onDelete: Cascade)
+  aluno   alunos   @relation(fields: [aluno_id], references: [id], onDelete: Cascade)
+  usuario usuarios @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([turma_id, aluno_id])
+  @@index([turma_id], map: "idx_turma_membros_turma")
+  @@index([aluno_id], map: "idx_turma_membros_aluno")
+}
+
+model ano_letivo {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ano         Int      @unique
+  data_inicio DateTime @db.Date
+  data_fim    DateTime @db.Date
+  ativo       Boolean  @default(true)
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+}
+
+model horario_grade {
+  id          String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ordem       Int
+  rotulo      String
+  hora_inicio DateTime           @db.Time(6)
+  hora_fim    DateTime           @db.Time(6)
+  tipo        tipo_bloco_horario @default(aula)
+  created_at  DateTime           @default(now()) @db.Timestamptz(6)
+
+  agenda_professor agenda_professor[]
+  agenda_excecoes  agenda_excecoes[]
+  apoio_presencial apoio_presencial[]
+}
+
+// -----------------------------------------------------------------------------
+// Avaliação
+// -----------------------------------------------------------------------------
+
+model tipos_avaliacao {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nome          String
+  descricao     String?
+  peso          Decimal?  @default(1.0) @db.Decimal(5, 2)
+  bimestre      Int?      @default(1)
+  disciplina_id String?   @db.Uuid
+  turma_id      String?   @db.Uuid
+  ordem         Int?      @default(0)
+  categoria     String    @default("normal")
+  user_id       String    @db.Uuid
+  created_at    DateTime? @default(now()) @db.Timestamptz(6)
+
+  disciplina disciplinas? @relation(fields: [disciplina_id], references: [id], onDelete: SetNull)
+  turma      turmas?      @relation(fields: [turma_id], references: [id], onDelete: Cascade)
+  usuario    usuarios     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  notas notas[]
+
+  @@index([user_id], map: "idx_tipos_avaliacao_user")
+  @@index([categoria], map: "idx_tipos_avaliacao_categoria")
+}
+
+model notas {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  aluno_id          String?   @db.Uuid
+  tipo_avaliacao_id String?   @db.Uuid
+  nota              Decimal?  @db.Decimal(5, 2)
+  bimestre          Int?      @default(1)
+  observacoes       String?
+  user_id           String    @db.Uuid
+  created_at        DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime? @default(now()) @updatedAt @db.Timestamptz(6)
+
+  aluno          alunos?          @relation(fields: [aluno_id], references: [id], onDelete: Cascade)
+  tipo_avaliacao tipos_avaliacao? @relation(fields: [tipo_avaliacao_id], references: [id], onDelete: Cascade)
+  usuario        usuarios         @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([aluno_id, tipo_avaliacao_id])
+  @@index([user_id], map: "idx_notas_user")
+}
+
+/// Média arredondada manualmente pelo professor.
+model medias_arredondadas {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id          String   @db.Uuid
+  aluno_id         String   @db.Uuid
+  turma_id         String   @db.Uuid
+  disciplina_id    String   @db.Uuid
+  bimestre         Int
+  nota_arredondada Decimal  @db.Decimal
+  manual           Boolean  @default(true)
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  usuario    usuarios    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  aluno      alunos      @relation(fields: [aluno_id], references: [id], onDelete: Cascade)
+  turma      turmas      @relation(fields: [turma_id], references: [id], onDelete: Cascade)
+  disciplina disciplinas @relation(fields: [disciplina_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, aluno_id, disciplina_id, bimestre])
+  @@index([user_id, turma_id, disciplina_id, bimestre], map: "idx_ma_lookup")
+}
+
+model provas {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  turma_id        String?   @db.Uuid
+  disciplina_id   String?   @db.Uuid
+  bimestre        Int?      @default(1)
+  titulo          String
+  numero_questoes Int       @default(10)
+  data_aplicacao  DateTime? @db.Date
+  observacoes     String?
+  valor_total     Decimal?  @default(10) @db.Decimal
+  escola          String?
+  professor       String?
+  user_id         String    @db.Uuid
+  created_at      DateTime? @default(now()) @db.Timestamptz(6)
+
+  turma      turmas?      @relation(fields: [turma_id], references: [id], onDelete: Cascade)
+  disciplina disciplinas? @relation(fields: [disciplina_id], references: [id], onDelete: SetNull)
+  usuario    usuarios     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  gabaritos        gabaritos[]
+  resultados_prova resultados_prova[]
+
+  @@index([user_id], map: "idx_provas_user")
+}
+
+model gabaritos {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  prova_id         String?  @db.Uuid
+  numero_questao   Int
+  resposta_correta String
+  peso             Decimal? @default(1.0) @db.Decimal(5, 2)
+  anulada          Boolean? @default(false)
+
+  prova provas? @relation(fields: [prova_id], references: [id], onDelete: Cascade)
+
+  @@unique([prova_id, numero_questao])
+}
+
+model resultados_prova {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  prova_id      String?   @db.Uuid
+  aluno_id      String?   @db.Uuid
+  respostas     Json?
+  acertos       Int?
+  nota          Decimal?  @db.Decimal(5, 2)
+  ajuste_manual Boolean?  @default(false)
+  observacoes   String?
+  user_id       String    @db.Uuid
+  created_at    DateTime? @default(now()) @db.Timestamptz(6)
+
+  prova   provas?  @relation(fields: [prova_id], references: [id], onDelete: Cascade)
+  aluno   alunos?  @relation(fields: [aluno_id], references: [id], onDelete: Cascade)
+  usuario usuarios @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([prova_id, aluno_id])
+  @@index([user_id], map: "idx_resultados_user")
+}
+
+// -----------------------------------------------------------------------------
+// Planejamento
+// -----------------------------------------------------------------------------
+
+model planejamentos_bimestrais {
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id              String    @db.Uuid
+  turma_id             String    @db.Uuid
+  disciplina_id        String?   @db.Uuid
+  /// 1..4 (CHECK manual)
+  bimestre             Int
+  ano                  Int       @default(dbgenerated("(EXTRACT(year FROM now()))::integer"))
+  /// rascunho | aguardando_validacao | validado (CHECK manual)
+  status               String    @default("rascunho")
+  validado_por         String?   @db.Uuid
+  validado_em          DateTime? @db.Timestamptz(6)
+  observacao_validacao String?
+  created_at           DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  usuario    usuarios     @relation("planejamento_dono", fields: [user_id], references: [id], onDelete: Cascade)
+  validador  usuarios?    @relation("planejamento_validador", fields: [validado_por], references: [id], onDelete: NoAction)
+  turma      turmas       @relation(fields: [turma_id], references: [id], onDelete: Cascade)
+  disciplina disciplinas? @relation(fields: [disciplina_id], references: [id], onDelete: SetNull)
+
+  planos_aula planos_aula[]
+
+  @@unique([user_id, turma_id, disciplina_id, bimestre, ano])
+}
+
+model planos_aula {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  turma_id               String?   @db.Uuid
+  disciplina_id          String?   @db.Uuid
+  bimestre               Int       @default(1)
+  data_aula              DateTime  @db.Date
+  dia_semana             String?
+  numero_aulas           Int?      @default(1)
+  aprendizagem_essencial String?
+  conteudo               String?
+  objetivos              String?
+  recursos               String?
+  desenvolvimento        String?
+  material_digital       String?
+  avaliacao_aprendizagem String?
+  aulas_previstas        Int?
+  professor              String?
+  duplicado_de           String?   @db.Uuid
+  tipo                   String    @default("normal")
+  /// pendente | aprovado | ... (fluxo de aprovação pela gestão — padrão E)
+  status                 String    @default("pendente")
+  aprovado_por           String?
+  data_aprovacao         DateTime? @db.Timestamptz(6)
+  comentario_aprovacao   String?
+  habilidades            String?
+  objetivo_geral         String?
+  user_id                String    @db.Uuid
+  planejamento_id        String?   @db.Uuid
+  created_at             DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime? @default(now()) @updatedAt @db.Timestamptz(6)
+
+  turma        turmas?                   @relation(fields: [turma_id], references: [id], onDelete: Cascade)
+  disciplina   disciplinas?              @relation(fields: [disciplina_id], references: [id], onDelete: SetNull)
+  original     planos_aula?              @relation("duplicacao", fields: [duplicado_de], references: [id], onDelete: NoAction)
+  duplicatas   planos_aula[]             @relation("duplicacao")
+  usuario      usuarios                  @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  planejamento planejamentos_bimestrais? @relation(fields: [planejamento_id], references: [id], onDelete: SetNull)
+
+  ajustes_plano ajustes_plano[]
+  plano_anexos  plano_anexos[]
+
+  @@index([user_id], map: "idx_planos_aula_user")
+  @@index([planejamento_id], map: "idx_planos_aula_planejamento")
+}
+
+model ajustes_plano {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  plano_id   String   @db.Uuid
+  descricao  String
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  plano planos_aula @relation(fields: [plano_id], references: [id], onDelete: Cascade)
+}
+
+/// Arquivo no bucket "plano-anexos" do Supabase Storage.
+model plano_anexos {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  plano_id      String   @db.Uuid
+  user_id       String   @db.Uuid
+  nome_arquivo  String
+  storage_path  String
+  mime_type     String?
+  tamanho_bytes BigInt?
+  /// documento | adaptada (CHECK manual)
+  tipo          String   @default("documento")
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  plano   planos_aula @relation(fields: [plano_id], references: [id], onDelete: Cascade)
+  usuario usuarios    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([plano_id], map: "idx_plano_anexos_plano")
+}
+
+// -----------------------------------------------------------------------------
+// Diário de classe
+// -----------------------------------------------------------------------------
+
+model diario_atividades {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id       String    @db.Uuid
+  turma_id      String    @db.Uuid
+  disciplina_id String?   @db.Uuid
+  bimestre      Int       @default(1)
+  nome          String
+  /// nota | conceito
+  tipo          String    @default("nota")
+  data          DateTime? @db.Date
+  peso          Decimal?  @default(1) @db.Decimal
+  observacao    String?
+  ordem         Int?      @default(0)
+  categoria     String?
+  created_at    DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  usuario    usuarios     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  turma      turmas       @relation(fields: [turma_id], references: [id], onDelete: Cascade)
+  disciplina disciplinas? @relation(fields: [disciplina_id], references: [id], onDelete: SetNull)
+
+  lancamentos diario_lancamentos[]
+
+  @@index([turma_id, disciplina_id, bimestre], map: "idx_diario_ativ_turma")
+}
+
+model diario_lancamentos {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id      String   @db.Uuid
+  atividade_id String   @db.Uuid
+  aluno_id     String   @db.Uuid
+  valor        String?
+  fez          Boolean?
+  observacao   String?
+  created_at   DateTime @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  usuario   usuarios          @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  atividade diario_atividades @relation(fields: [atividade_id], references: [id], onDelete: Cascade)
+  aluno     alunos            @relation(fields: [aluno_id], references: [id], onDelete: Cascade)
+
+  @@unique([atividade_id, aluno_id])
+  @@index([atividade_id], map: "idx_diario_lanc_ativ")
+  @@index([aluno_id], map: "idx_diario_lanc_aluno")
+}
+
+model diario_observacoes_aluno {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id       String   @db.Uuid
+  aluno_id      String   @db.Uuid
+  turma_id      String   @db.Uuid
+  disciplina_id String?  @db.Uuid
+  bimestre      Int      @default(1)
+  observacao    String
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  usuario    usuarios     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  aluno      alunos       @relation(fields: [aluno_id], references: [id], onDelete: Cascade)
+  turma      turmas       @relation(fields: [turma_id], references: [id], onDelete: Cascade)
+  disciplina disciplinas? @relation(fields: [disciplina_id], references: [id], onDelete: SetNull)
+}
+
+// -----------------------------------------------------------------------------
+// Agenda
+// -----------------------------------------------------------------------------
+
+/// Grade semanal fixa do professor.
+model agenda_professor {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id          String   @db.Uuid
+  /// 0..6 (CHECK manual)
+  dia_semana       Int      @db.SmallInt
+  horario_grade_id String   @db.Uuid
+  disciplina_id    String?  @db.Uuid
+  turma_id         String?  @db.Uuid
+  atividade        String?
+  cor              String?
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  usuario    usuarios      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  horario    horario_grade @relation(fields: [horario_grade_id], references: [id], onDelete: Cascade)
+  disciplina disciplinas?  @relation(fields: [disciplina_id], references: [id], onDelete: SetNull)
+  turma      turmas?       @relation(fields: [turma_id], references: [id], onDelete: SetNull)
+
+  @@unique([user_id, dia_semana, horario_grade_id])
+}
+
+/// Alteração pontual da grade numa data específica.
+model agenda_excecoes {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id          String   @db.Uuid
+  data             DateTime @db.Date
+  horario_grade_id String   @db.Uuid
+  disciplina_id    String?  @db.Uuid
+  turma_id         String?  @db.Uuid
+  atividade        String?
+  cancelado        Boolean  @default(false)
+  observacao       String?
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  usuario    usuarios      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  horario    horario_grade @relation(fields: [horario_grade_id], references: [id], onDelete: Cascade)
+  disciplina disciplinas?  @relation(fields: [disciplina_id], references: [id], onDelete: SetNull)
+  turma      turmas?       @relation(fields: [turma_id], references: [id], onDelete: SetNull)
+
+  @@unique([user_id, data, horario_grade_id])
+}
+
+model agenda_escola_eventos {
+  id          String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  criado_por  String             @db.Uuid
+  titulo      String
+  descricao   String?
+  tipo        tipo_evento_escola @default(aviso)
+  data_inicio DateTime           @db.Timestamptz(6)
+  data_fim    DateTime?          @db.Timestamptz(6)
+  dia_todo    Boolean            @default(false)
+  cor         String?
+  created_at  DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime           @default(now()) @updatedAt @db.Timestamptz(6)
+
+  criador usuarios @relation(fields: [criado_por], references: [id], onDelete: Cascade)
+}
+
+model apoio_presencial {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  criado_por       String   @db.Uuid
+  data             DateTime @db.Date
+  horario_grade_id String?  @db.Uuid
+  professor_id     String   @db.Uuid
+  responsavel_id   String   @db.Uuid
+  observacao       String?
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  horario     horario_grade? @relation(fields: [horario_grade_id], references: [id], onDelete: SetNull)
+  criador     usuarios       @relation("apoio_criador", fields: [criado_por], references: [id], onDelete: Cascade)
+  professor   usuarios       @relation("apoio_professor", fields: [professor_id], references: [id], onDelete: Cascade)
+  responsavel usuarios       @relation("apoio_responsavel", fields: [responsavel_id], references: [id], onDelete: Cascade)
+}
+
+model lembretes {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  titulo        String
+  descricao     String?
+  data          DateTime? @db.Date
+  /// baixa | media | alta (CHECK manual)
+  prioridade    String    @default("media")
+  cor           String    @default("amarelo")
+  turma_id      String?   @db.Uuid
+  disciplina_id String?   @db.Uuid
+  concluido     Boolean   @default(false)
+  fixado        Boolean   @default(false)
+  posicao       Int?      @default(0)
+  user_id       String    @db.Uuid
+  created_at    DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  turma      turmas?      @relation(fields: [turma_id], references: [id], onDelete: SetNull)
+  disciplina disciplinas? @relation(fields: [disciplina_id], references: [id], onDelete: SetNull)
+  usuario    usuarios     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id], map: "idx_lembretes_user")
+}
+
+// -----------------------------------------------------------------------------
+// Ocorrências
+// -----------------------------------------------------------------------------
+
+model ocorrencias_notebook {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  turma_id               String?   @db.Uuid
+  data_ocorrencia        DateTime  @default(dbgenerated("CURRENT_DATE")) @db.Date
+  quantidade_notebooks   Int?      @default(0)
+  alunos_envolvidos      String?
+  problema_encontrado    String?
+  descricao              String?
+  equipamento_danificado Boolean?  @default(false)
+  internet_funcionou     Boolean?  @default(true)
+  solucao_adotada        String?
+  observacoes            String?
+  user_id                String    @db.Uuid
+  created_at             DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime? @default(now()) @updatedAt @db.Timestamptz(6)
+
+  turma   turmas?  @relation(fields: [turma_id], references: [id], onDelete: SetNull)
+  usuario usuarios @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  fotos ocorrencia_fotos[]
+
+  @@index([user_id], map: "idx_ocorrencias_user")
+}
+
+/// Arquivo no bucket "ocorrencias-fotos".
+model ocorrencia_fotos {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ocorrencia_id String   @db.Uuid
+  url           String
+  path          String
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  ocorrencia ocorrencias_notebook @relation(fields: [ocorrencia_id], references: [id], onDelete: Cascade)
+}
+
+/// Fluxo com estado (padrão F): professor só edita enquanto status = 'nova'.
+/// O antigo trigger oe_mark_unseen vira regra de negócio no backend (Fase 5).
+model ocorrencias_escolares {
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id              String    @db.Uuid
+  data                 DateTime  @default(dbgenerated("CURRENT_DATE")) @db.Date
+  turma                String?
+  alunos               String?
+  disciplina           String?
+  tipo                 String
+  descricao            String
+  status               String    @default("nova")
+  providencias         String?
+  gestao_user_id       String?   @db.Uuid
+  respondido_em        DateTime? @db.Timestamptz(6)
+  visto_pelo_professor Boolean   @default(true)
+  created_at           DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  usuario usuarios  @relation("ocorrencia_dono", fields: [user_id], references: [id], onDelete: Cascade)
+  gestao  usuarios? @relation("ocorrencia_gestao", fields: [gestao_user_id], references: [id], onDelete: SetNull)
+}
+
+// -----------------------------------------------------------------------------
+// PDI (evidências)
+// -----------------------------------------------------------------------------
+
+model pdi_evidencias {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id         String   @db.Uuid
+  titulo          String
+  data_realizacao DateTime @default(dbgenerated("CURRENT_DATE")) @db.Date
+  ano_letivo      Int      @default(dbgenerated("EXTRACT(year FROM now())"))
+  bimestre        Int      @default(1)
+  turma_id        String?  @db.Uuid
+  disciplina_id   String?  @db.Uuid
+  tipo_atividade  String   @default("Outro")
+  objetivo        String?
+  descricao       String?
+  resultados      String?
+  created_at      DateTime @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  usuario    usuarios     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  turma      turmas?      @relation(fields: [turma_id], references: [id], onDelete: SetNull)
+  disciplina disciplinas? @relation(fields: [disciplina_id], references: [id], onDelete: SetNull)
+
+  fotos      pdi_evidencia_fotos[]
+  documentos pdi_evidencia_documentos[]
+
+  @@index([user_id], map: "idx_pdi_evidencias_user")
+  @@index([turma_id], map: "idx_pdi_evidencias_turma")
+  @@index([disciplina_id], map: "idx_pdi_evidencias_disciplina")
+}
+
+/// Arquivo no bucket "pdi-fotos".
+model pdi_evidencia_fotos {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  evidencia_id String   @db.Uuid
+  storage_path String
+  url          String
+  nome         String?
+  created_at   DateTime @default(now()) @db.Timestamptz(6)
+
+  evidencia pdi_evidencias @relation(fields: [evidencia_id], references: [id], onDelete: Cascade)
+
+  @@index([evidencia_id], map: "idx_pdi_fotos_evidencia")
+}
+
+/// Arquivo no bucket "pdi-documentos".
+model pdi_evidencia_documentos {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  evidencia_id  String   @db.Uuid
+  user_id       String   @db.Uuid
+  storage_path  String
+  nome_arquivo  String
+  mime_type     String?
+  tamanho_bytes BigInt?
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  evidencia pdi_evidencias @relation(fields: [evidencia_id], references: [id], onDelete: Cascade)
+  usuario   usuarios       @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([evidencia_id], map: "idx_pdi_docs_evidencia")
+}
+
+// -----------------------------------------------------------------------------
+// Tutoria
+// -----------------------------------------------------------------------------
+
+model tutorados {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id        String   @db.Uuid
+  aluno_id       String?  @db.Uuid
+  nome           String
+  turma          String?
+  numero_chamada Int?
+  status         String   @default("ativo")
+  observacoes    String?
+  /// Arquivo no bucket "tutoria-fotos".
+  foto_path      String?
+  data_inicio    DateTime @default(dbgenerated("CURRENT_DATE")) @db.Date
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  usuario usuarios @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  aluno   alunos?  @relation(fields: [aluno_id], references: [id], onDelete: SetNull)
+
+  checkins   tutoria_checkins[]
+  registros  tutoria_registros[]
+  combinados tutoria_combinados[]
+  documentos tutoria_documentos[]
+}
+
+model tutoria_checkins {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tutorado_id String   @db.Uuid
+  user_id     String   @db.Uuid
+  humor       String
+  observacao  String?
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  tutorado tutorados @relation(fields: [tutorado_id], references: [id], onDelete: Cascade)
+  usuario  usuarios  @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+model tutoria_registros {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tutorado_id  String   @db.Uuid
+  user_id      String   @db.Uuid
+  data         DateTime @default(dbgenerated("CURRENT_DATE")) @db.Date
+  como_esta    String?
+  observacao   String?
+  combinado    String?
+  proxima_acao String?
+  created_at   DateTime @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  tutorado tutorados @relation(fields: [tutorado_id], references: [id], onDelete: Cascade)
+  usuario  usuarios  @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+model tutoria_combinados {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tutorado_id String   @db.Uuid
+  user_id     String   @db.Uuid
+  descricao   String
+  data        DateTime @default(dbgenerated("CURRENT_DATE")) @db.Date
+  status      String   @default("pendente")
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  tutorado tutorados @relation(fields: [tutorado_id], references: [id], onDelete: Cascade)
+  usuario  usuarios  @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+/// Arquivo no bucket "tutoria-documentos".
+model tutoria_documentos {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tutorado_id   String   @db.Uuid
+  user_id       String   @db.Uuid
+  storage_path  String
+  nome_arquivo  String
+  mime_type     String?
+  tamanho_bytes BigInt?
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  tutorado tutorados @relation(fields: [tutorado_id], references: [id], onDelete: Cascade)
+  usuario  usuarios  @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+// -----------------------------------------------------------------------------
+// Replicabilidade (mural público — padrão D)
+// -----------------------------------------------------------------------------
+
+model replicabilidades {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    String   @db.Uuid
+  titulo     String
+  descricao  String?
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  usuario usuarios @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  fotos replicabilidade_fotos[]
+}
+
+/// Arquivo no bucket "replicabilidade-fotos".
+model replicabilidade_fotos {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  replicabilidade_id String   @db.Uuid
+  storage_path       String
+  nome               String?
+  ordem              Int      @default(0)
+  created_at         DateTime @default(now()) @db.Timestamptz(6)
+
+  replicabilidade replicabilidades @relation(fields: [replicabilidade_id], references: [id], onDelete: Cascade)
+}

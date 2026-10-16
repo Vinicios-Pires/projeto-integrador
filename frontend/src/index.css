@@ -1,0 +1,144 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Identidade visual EE Prof. Edson Vianei Alves */
+    --background: 210 40% 98%;           /* #F5F7FA cinza claro */
+    --foreground: 220 60% 15%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 60% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 60% 15%;
+
+    --primary: 216 92% 44%;              /* #0B5ED7 azul principal */
+    --primary-foreground: 0 0% 100%;
+    --primary-light: 210 100% 96%;       /* #EAF4FF */
+    --primary-dark: 219 72% 32%;         /* #153E8C */
+    --primary-glow: 216 92% 60%;
+
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 219 72% 32%;
+
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+
+    --accent: 45 100% 51%;               /* #FFC107 amarelo */
+    --accent-foreground: 220 60% 15%;
+
+    --destructive: 340 82% 52%;          /* #E91E63 rosa */
+    --destructive-foreground: 0 0% 100%;
+    --danger-light: 340 82% 96%;
+
+    --success: 142 71% 45%;              /* #22C55E */
+    --success-foreground: 0 0% 100%;
+    --success-light: 138 76% 93%;
+
+    --warning: 45 100% 51%;              /* #FFC107 */
+    --warning-foreground: 220 60% 15%;
+    --warning-light: 48 100% 92%;
+
+    --rose: 340 82% 52%;
+    --rose-foreground: 0 0% 100%;
+
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 216 92% 44%;
+
+    --radius: 0.85rem;
+
+    /* Sidebar azul escuro */
+    --sidebar-background: 219 72% 22%;    /* azul profundo */
+    --sidebar-foreground: 210 40% 92%;
+    --sidebar-primary: 45 100% 60%;       /* destaque amarelo */
+    --sidebar-primary-foreground: 220 60% 15%;
+    --sidebar-accent: 216 92% 44%;        /* azul principal para ativos */
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 219 60% 30%;
+    --sidebar-ring: 216 92% 44%;
+
+    --gradient-hero: linear-gradient(135deg, hsl(216 92% 44%), hsl(219 72% 32%));
+    --gradient-sidebar: linear-gradient(180deg, hsl(219 72% 22%), hsl(219 72% 15%));
+    --shadow-card: 0 1px 2px 0 hsl(216 60% 30% / 0.05), 0 4px 12px -2px hsl(216 60% 30% / 0.08);
+    --shadow-elevated: 0 10px 30px -10px hsl(216 92% 44% / 0.25), 0 4px 12px -4px hsl(216 60% 30% / 0.1);
+    --shadow-soft: 0 4px 14px -6px hsl(216 60% 40% / 0.15);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3 {
+    font-family: 'Fraunces', 'Plus Jakarta Sans', serif;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--border));
+    border-radius: 999px;
+  }
+
+  .table-sheet {
+    @apply border-collapse w-full text-sm;
+  }
+  .table-sheet th {
+    @apply bg-secondary text-muted-foreground font-medium px-3 py-2 text-left border-b border-border sticky top-0 z-10;
+  }
+  .table-sheet td {
+    @apply px-3 py-2 border-b border-border/50;
+  }
+  .table-sheet tr:hover td {
+    @apply bg-primary-light/40;
+  }
+
+  .status-badge {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold;
+  }
+  .status-aprovado {
+    @apply bg-success-light text-success;
+  }
+  .status-recuperacao {
+    @apply bg-warning-light text-warning;
+  }
+  .status-reprovado {
+    @apply bg-danger-light text-destructive;
+  }
+
+  .grade-low {
+    @apply bg-danger-light text-destructive font-semibold;
+  }
+  .grade-warning {
+    @apply bg-warning-light text-warning font-semibold;
+  }
+  .grade-ok {
+    @apply text-foreground;
+  }
+}

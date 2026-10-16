@@ -1,0 +1,1 @@
+ALTER TABLE public.diario_atividades ADD COLUMN IF NOT EXISTS categoria TEXT;

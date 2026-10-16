@@ -1,0 +1,1 @@
+ALTER TABLE public.ocorrencias_escolares ADD COLUMN IF NOT EXISTS disciplina TEXT;
