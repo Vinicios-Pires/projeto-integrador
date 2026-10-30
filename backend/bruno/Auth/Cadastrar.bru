@@ -1,0 +1,38 @@
+meta {
+  name: Cadastrar
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/auth/signup
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "nome": "{{cadastroNome}}",
+    "email": "{{cadastroEmail}}",
+    "senha": "{{cadastroSenha}}"
+  }
+}
+
+tests {
+  test("cadastro criado como pendente", function () {
+    expect(res.status).to.equal(201);
+    expect(res.body.profile.status).to.equal("pendente");
+    expect(res.body.role).to.equal("professor");
+  });
+}
+
+docs {
+  Cria uma conta nova. Só e-mails `@prof.educacao.sp.gov.br`. A conta nasce **pendente**, como
+  **professor**, e só consegue entrar depois que o admin aprovar (Parte 3). Não devolve token.
+
+  Preencha no ambiente: `cadastroNome`, `cadastroEmail` e a secreta `cadastroSenha` (mínimo 8 caracteres).
+
+  Erros possíveis (`error.code`): `DOMINIO_NAO_PERMITIDO`, `EMAIL_INVALIDO`, `SENHA_FRACA`,
+  `SENHA_LONGA`, `DADOS_INVALIDOS` (400), `EMAIL_JA_CADASTRADO` (409),
+  `MUITAS_TENTATIVAS` (429, mais de 5 cadastros por hora do mesmo lugar).
+}

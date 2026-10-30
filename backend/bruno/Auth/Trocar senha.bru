@@ -1,0 +1,43 @@
+meta {
+  name: Trocar senha
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/auth/change-password
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "senha_atual": "{{senha}}",
+    "nova_senha": "{{novaSenha}}"
+  }
+}
+
+script:post-response {
+  // A senha nova passa a ser a senha do ambiente, para o próximo "Entrar" funcionar.
+  if (res.status === 204) {
+    bru.setEnvVar("senha", bru.getEnvVar("novaSenha"));
+  }
+}
+
+tests {
+  test("senha trocada", function () {
+    expect(res.status).to.equal(204);
+  });
+}
+
+docs {
+  Troca a própria senha e libera quem estava com senha temporária.
+  Preencha a variável secreta `novaSenha` (mínimo 8 caracteres, diferente da atual).
+  
+  Erros possíveis: `SENHA_ATUAL_INCORRETA`, `SENHA_FRACA`, `SENHA_REPETIDA` (400),
+  `NAO_AUTENTICADO` (401).
+}

@@ -1,0 +1,30 @@
+meta {
+  name: Resetar senha
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/users/{{usuarioId}}/reset-password
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("senha temporária gerada", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body.senha_temporaria).to.be.a("string");
+  });
+}
+
+docs {
+  Gera uma **senha temporária** para o admin repassar à pessoa (não há e-mail automático).
+  Ela aparece **só nesta resposta**. No próximo acesso, a pessoa é obrigada a trocá-la. **Só admin.**
+
+  Erros possíveis: `SEM_PERMISSAO` (403), `USUARIO_NAO_ENCONTRADO` (404),
+  `ACAO_EM_SI_MESMO` (400, para a própria senha use Auth > Trocar senha).
+}

@@ -1,0 +1,36 @@
+meta {
+  name: Aprovar ou reativar
+  type: http
+  seq: 2
+}
+
+patch {
+  url: {{baseUrl}}/users/{{usuarioId}}/status
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "status": "ativo"
+  }
+}
+
+tests {
+  test("usuário ativo", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body.status).to.equal("ativo");
+  });
+}
+
+docs {
+  Aprova um cadastro pendente ou reativa uma conta inativa. **Só admin.**
+  Age sobre o usuário da variável `usuarioId`.
+  
+  Erros possíveis: `SEM_PERMISSAO` (403), `USUARIO_NAO_ENCONTRADO` (404),
+  `ACAO_EM_SI_MESMO` (400, o admin não altera a própria conta).
+}

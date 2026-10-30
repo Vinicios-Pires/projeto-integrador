@@ -1,0 +1,46 @@
+meta {
+  name: Listar usuarios
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/users?status=&busca=
+  body: none
+  auth: bearer
+}
+
+params:query {
+  status: 
+  busca: 
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+script:post-response {
+  // Guarda o primeiro da lista em `usuarioId`, para os outros pedidos da pasta usarem.
+  if (res.status === 200 && res.body.length > 0) {
+    bru.setEnvVar("usuarioId", res.body[0].id);
+  }
+}
+
+tests {
+  test("lista devolvida", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body).to.be.an("array");
+  });
+}
+
+docs {
+  Lista os usuários, do mais novo para o mais antigo. **Gestão e admin** podem ver.
+  
+  Filtros opcionais: `status` (`pendente`, `ativo`, `inativo`) e `busca` (parte do nome ou do e-mail).
+  Dica: use `status=pendente` para ver quem aguarda aprovação.
+  
+  O **primeiro da lista** fica salvo na variável `usuarioId`, usada pelos outros pedidos desta pasta.
+  Para agir em outra pessoa, troque o `usuarioId` no ambiente.
+  
+  Erros possíveis: `NAO_AUTENTICADO` (401), `SEM_PERMISSAO` (403, professor), `DADOS_INVALIDOS` (400).
+}

@@ -1,0 +1,34 @@
+meta {
+  name: Trocar papel
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{baseUrl}}/users/{{usuarioId}}/role
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  { "role": "coordenador" }
+}
+tests {
+  test("papel trocado", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body.role).to.be.a("string");
+  });
+}
+
+docs {
+  Troca o papel (a pessoa fica com **exatamente um**). Vale na hora, sem precisar entrar de novo. **Só admin.**
+
+  Papéis: `professor`, `coordenador`, `direcao`, `vice_direcao`, `admin`. Edite o corpo para escolher.
+
+  Erros possíveis: `DADOS_INVALIDOS` (400, papel inexistente), `SEM_PERMISSAO` (403),
+  `USUARIO_NAO_ENCONTRADO` (404), `ACAO_EM_SI_MESMO` (400, o admin não rebaixa a si mesmo).
+}

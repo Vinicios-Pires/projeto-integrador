@@ -1,0 +1,41 @@
+meta {
+  name: Entrar Admin
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/auth/login
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "email": "admin@prof.educacao.sp.gov.br",
+    "senha": "admin123!"
+  }
+}
+
+script:post-response {
+  if (res.status === 200) {
+    bru.setEnvVar("token", res.body.token);
+  }
+}
+
+tests {
+  test("entrou e recebeu token", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body.token).to.be.a("string");
+  });
+}
+
+docs {
+  Troca e-mail + senha por um token (válido por 8h), que fica salvo na variável `token`.
+  
+  Erros possíveis (`error.code`): `CREDENCIAIS_INVALIDAS` (401), `CONTA_PENDENTE` (403),
+  `CONTA_INATIVA` (403), `DADOS_INVALIDOS` (400),
+  `MUITAS_TENTATIVAS` (429, 10 senhas erradas em 15 min do mesmo lugar; logins certos não contam).
+  
+  Se `deve_trocar_senha` vier `true`, rode **Trocar senha** antes de qualquer outra coisa.
+}
