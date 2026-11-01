@@ -1,0 +1,50 @@
+meta {
+  name: Anexar arquivo
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{baseUrl}}/planos-aula/{{planoId}}/anexos?tipo=documento&nome=roteiro.txt
+  body: text
+  auth: bearer
+}
+
+params:query {
+  tipo: documento
+  nome: roteiro.txt
+}
+
+headers {
+  Content-Type: text/plain
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:text {
+  Roteiro da aula enviado pelo Bruno.
+}
+
+script:post-response {
+  if (res.status === 201) bru.setEnvVar("anexoId", res.body.id);
+}
+
+tests {
+  test("anexo enviado", function () {
+    expect(res.status).to.equal(201);
+    expect(res.body.tipo).to.equal("documento");
+  });
+}
+
+docs {
+  Anexa um arquivo à aula: o corpo é o próprio arquivo, com o tipo no `Content-Type` (documentos e imagens,
+  até 20 MB). `?tipo=documento|adaptada&nome=<nome original>`. Fica na pasta do professor dono, mesmo quando o
+  admin envia. Planilha validada não recebe. Guarda o id em `anexoId`. Para abrir:
+  `GET /files/plano-anexos/url?path=<storage_path>`.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400), `ARQUIVO_VAZIO` (400), `SEM_PERMISSAO` (403),
+  `PLANO_NAO_ENCONTRADO` (404), `PLANEJAMENTO_VALIDADO` (409), `ARQUIVO_GRANDE_DEMAIS` (413),
+  `TIPO_NAO_PERMITIDO` (415).
+}

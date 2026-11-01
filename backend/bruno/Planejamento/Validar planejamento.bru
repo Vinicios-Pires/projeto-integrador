@@ -1,0 +1,37 @@
+meta {
+  name: Validar planejamento
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/planejamentos/{{planejamentoId}}/status
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "status": "validado",
+    "observacao": "Planejamento aprovado."
+  }
+}
+
+tests {
+  test("planejamento validado", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body.status).to.equal("validado");
+  });
+}
+
+docs {
+  **Gestão** valida o planejamento (entre com um usuário da gestão). Para "solicitar ajustes" ou "reabrir",
+  mande `"status": "rascunho"` com a `observacao`.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400), `SEM_PERMISSAO` (403),
+  `PLANEJAMENTO_NAO_ENCONTRADO` (404), `STATUS_INVALIDO` (409).
+}

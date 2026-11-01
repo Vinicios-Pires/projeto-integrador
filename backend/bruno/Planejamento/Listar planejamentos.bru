@@ -1,0 +1,29 @@
+meta {
+  name: Listar planejamentos
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/planejamentos
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("lista os planejamentos", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body).to.be.an("array");
+  });
+}
+
+docs {
+  Lista os planejamentos (ano mais recente primeiro), com `turmas: { nome, serie }` e `disciplinas: { nome }`.
+  Filtros: `bimestre`, `ano`, `turma_id`, `disciplina_id`, `user_id`. O professor vê os seus; a gestão, todos.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400).
+}

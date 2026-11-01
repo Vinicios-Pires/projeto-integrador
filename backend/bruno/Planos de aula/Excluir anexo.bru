@@ -1,0 +1,28 @@
+meta {
+  name: Excluir anexo
+  type: http
+  seq: 9
+}
+
+delete {
+  url: {{baseUrl}}/planos-aula/{{planoId}}/anexos/{{anexoId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("anexo excluído", function () {
+    expect(res.status).to.equal(204);
+  });
+}
+
+docs {
+  Apaga o anexo e o arquivo. Só o dono (ou o admin), com a planilha aberta.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `SEM_PERMISSAO` (403), `PLANO_NAO_ENCONTRADO` (404),
+  `ANEXO_NAO_ENCONTRADO` (404), `PLANEJAMENTO_VALIDADO` (409).
+}

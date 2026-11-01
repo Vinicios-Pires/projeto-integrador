@@ -1,0 +1,36 @@
+meta {
+  name: Editar avaliacao
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{baseUrl}}/tipos-avaliacao/{{tipoAvaliacaoId}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  { "nome": "Prova 1 (revisada)", "peso": 3 }
+}
+
+tests {
+  test("avaliação alterada", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body.peso).to.equal(3);
+  });
+}
+
+docs {
+  Altera **só o enviado** (nome, peso, categoria, bimestre, ordem, descrição). Mudar o bimestre leva
+  junto o das notas. A turma e a matéria **não mudam** (crie outra avaliação).
+
+  Quem pode: o **dono** e o **admin**.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400), `SEM_PERMISSAO` (403, gestão),
+  `AVALIACAO_NAO_ENCONTRADA` (404).
+}

@@ -1,0 +1,39 @@
+meta {
+  name: Aprovar aulas
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/planos-aula/aprovacao
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "ids": ["{{planoId}}"],
+    "status": "aprovado",
+    "comentario": "Plano bem estruturado."
+  }
+}
+
+tests {
+  test("aula aprovada", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body[0].status).to.equal("aprovado");
+  });
+}
+
+docs {
+  **Gestão** aprova (`aprovado`), devolve para ajuste (`ajustado`) ou volta a `pendente` uma ou várias aulas
+  (até 200). Grava `aprovado_por`, `data_aprovacao` e `comentario_aprovacao`. Entre com um usuário da gestão.
+  Quando o professor edita uma aula aprovada ou devolvida, ela volta a pendente sozinha.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400), `SEM_PERMISSAO` (403),
+  `PLANO_NAO_ENCONTRADO` (404).
+}

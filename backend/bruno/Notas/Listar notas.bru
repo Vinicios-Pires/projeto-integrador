@@ -1,0 +1,34 @@
+meta {
+  name: Listar notas
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{baseUrl}}/notas?tipo_avaliacao_id={{tipoAvaliacaoId}}
+  body: none
+  auth: bearer
+}
+
+params:query {
+  tipo_avaliacao_id: {{tipoAvaliacaoId}}
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("notas devolvidas", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body).to.be.an("array");
+  });
+}
+
+docs {
+  Lista as notas, cada uma com `tipos_avaliacao` (nome, peso, bimestre, matéria, turma, categoria).
+  Filtros: `aluno_id` e `tipo_avaliacao_id` (um ou vários, separados por vírgula), `bimestre`, `turma_id`,
+  `disciplina_id`. O professor vê as próprias; a gestão, todas.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400).
+}

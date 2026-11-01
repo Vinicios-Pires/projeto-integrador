@@ -26,7 +26,14 @@
     "test:membros": "tsx scripts/testar-membros.ts",
     "test:calendario": "tsx scripts/testar-calendario.ts",
     "test:arquivos": "tsx scripts/testar-arquivos.ts",
-    "test:supabase-storage": "tsx scripts/testar-supabase-storage.ts"
+    "test:supabase-storage": "tsx scripts/testar-supabase-storage.ts",
+    "test:notas": "tsx scripts/testar-notas.ts",
+    "test:medias": "tsx scripts/testar-medias.ts",
+    "test:provas": "tsx scripts/testar-provas.ts",
+    "test:correcao": "tsx scripts/testar-correcao.ts",
+    "test:planejamentos": "tsx scripts/testar-planejamentos.ts",
+    "test:planos": "tsx scripts/testar-planos.ts",
+    "test:aprovacao": "tsx scripts/testar-aprovacao.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

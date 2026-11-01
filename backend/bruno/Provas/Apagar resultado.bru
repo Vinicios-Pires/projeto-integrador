@@ -1,0 +1,28 @@
+meta {
+  name: Apagar resultado
+  type: http
+  seq: 8
+}
+
+delete {
+  url: {{baseUrl}}/provas/{{provaId}}/resultados/{{alunoId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("folha apagada", function () {
+    expect(res.status).to.equal(204);
+  });
+}
+
+docs {
+  Apaga a folha corrigida de um aluno (por exemplo, lançada no aluno errado). Só o dono (ou o admin).
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `SEM_PERMISSAO` (403), `PROVA_NAO_ENCONTRADA` (404),
+  `RESULTADO_NAO_ENCONTRADO` (404).
+}

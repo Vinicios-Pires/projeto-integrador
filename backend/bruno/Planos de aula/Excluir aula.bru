@@ -1,0 +1,29 @@
+meta {
+  name: Excluir aula
+  type: http
+  seq: 10
+}
+
+delete {
+  url: {{baseUrl}}/planos-aula/{{planoId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("aula excluída", function () {
+    expect(res.status).to.equal(204);
+  });
+}
+
+docs {
+  Exclui a aula; os anexos e ajustes saem junto. As cópias dela continuam, sem a ligação. Só o dono (ou o
+  admin), com o planejamento aberto.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `SEM_PERMISSAO` (403), `PLANO_NAO_ENCONTRADO` (404),
+  `PLANEJAMENTO_VALIDADO` (409).
+}

@@ -1,0 +1,43 @@
+meta {
+  name: Abrir planejamento
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/planejamentos
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "turma_id": "{{turmaId}}",
+    "disciplina_id": "{{disciplinaId}}",
+    "bimestre": 1
+  }
+}
+
+script:post-response {
+  if (res.status === 201 || res.status === 200) bru.setEnvVar("planejamentoId", res.body.id);
+}
+
+tests {
+  test("planejamento aberto", function () {
+    expect([200, 201]).to.include(res.status);
+    expect(res.body.status).to.be.a("string");
+  });
+}
+
+docs {
+  Abre o planejamento bimestral de quem está logado para a turma, matéria (opcional), bimestre e ano (padrão:
+  o atual). **Se já existe, devolve o mesmo (200)**; senão cria um rascunho (201). Guarda o id em
+  `planejamentoId`.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400), `TURMA_INVALIDA` (400),
+  `DISCIPLINA_INVALIDA` (400).
+}

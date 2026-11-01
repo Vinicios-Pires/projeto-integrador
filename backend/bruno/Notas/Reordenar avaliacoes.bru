@@ -1,0 +1,33 @@
+meta {
+  name: Reordenar avaliacoes
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{baseUrl}}/tipos-avaliacao/ordem
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  { "ids": ["{{tipoAvaliacaoId}}"] }
+}
+
+tests {
+  test("ordem salva", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body[0].ordem).to.equal(1);
+  });
+}
+
+docs {
+  Salva a nova ordem das colunas de uma vez: a primeira da lista vira 1, a segunda 2, e assim por diante.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400, lista vazia ou repetida),
+  `SEM_PERMISSAO` (403), `AVALIACAO_NAO_ENCONTRADA` (404).
+}

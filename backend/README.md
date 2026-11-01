@@ -23,6 +23,13 @@ npm run test:membros     # confere os membros das eletivas
 npm run test:calendario  # confere a grade de horários e o ano letivo
 npm run test:arquivos    # confere o correio de arquivos (pasta temporária)
 npm run test:supabase-storage # confere a ligação com o Supabase Storage (contra um Supabase simulado)
+npm run test:notas       # confere as avaliações e as notas
+npm run test:medias      # confere as médias arredondadas
+npm run test:provas      # confere as provas e os gabaritos
+npm run test:correcao    # confere a correção das provas
+npm run test:planejamentos # confere o planejamento bimestral e a validação
+npm run test:planos      # confere os planos de aula, duplicar, ajustes e a trava
+npm run test:aprovacao   # confere a aprovação dos planos e os anexos
 npm run dev              # http://localhost:3333/health
 ```
 
@@ -51,6 +58,13 @@ npm run dev              # http://localhost:3333/health
 | `npm run test:calendario` | Conferência da grade de horários e do ano letivo (só o admin altera; não mexe nos dados reais) |
 | `npm run test:arquivos` | Conferência do correio de arquivos: enviar, links temporários, excluir e quem pode (armazenamento local temporário) |
 | `npm run test:supabase-storage` | Conferência do driver do Supabase Storage contra um Supabase simulado (chave, caminhos, links em lote, nada vaza) |
+| `npm run test:notas` | Conferência das avaliações e notas, com o padrão A (usuários e dados temporários) |
+| `npm run test:medias` | Conferência das médias arredondadas (ajuste manual da média final, usuários e dados temporários) |
+| `npm run test:provas` | Conferência das provas e gabaritos, com o padrão A (usuários e dados temporários) |
+| `npm run test:correcao` | Conferência da correção de provas: acertos, nota e recálculo (usuários e dados temporários) |
+| `npm run test:planejamentos` | Conferência do planejamento bimestral e da validação pela gestão (usuários e dados temporários) |
+| `npm run test:planos` | Conferência dos planos de aula: aulas, duplicar, copiar para baixo, ajustes e a trava do validado |
+| `npm run test:aprovacao` | Conferência da aprovação dos planos pela gestão e dos anexos (pasta temporária de arquivos) |
 
 ## Schema
 
@@ -225,6 +239,131 @@ e sai mascarada nos logs). Os links devolvidos são as URLs assinadas do própri
 
 Erros: `DADOS_INVALIDOS` (400, pasta ou caminho inválido), `ARQUIVO_VAZIO` (400), `SEM_PERMISSAO` (403),
 `ARQUIVO_NAO_ENCONTRADO` / `BUCKET_NAO_ENCONTRADO` (404), `ARQUIVO_GRANDE_DEMAIS` (413), `TIPO_NAO_PERMITIDO` (415).
+
+## Avaliações e notas
+
+Padrão A: o professor vê e altera as próprias avaliações e notas; a gestão vê todas (só leitura); o admin pode
+tudo. A média é calculada pela tela; o backend guarda as notas. Colunas decimais (`peso`, `nota`) saem como
+**número**, como o Supabase devolve.
+
+| Rota | Quem | O que faz |
+|---|---|---|
+| `GET /tipos-avaliacao?turma_id=&disciplina_id=&bimestre=` | logado | Avaliações (colunas da planilha) em ordem |
+| `POST /tipos-avaliacao` | logado | `{ nome, turma_id, disciplina_id, bimestre, peso?, categoria?, ordem?, descricao? }`. Turma e matéria precisam ser visíveis para quem cria. Sem `ordem`, vai para o fim |
+| `PATCH /tipos-avaliacao/:id` | dono, admin | Altera só o enviado; mudar `bimestre` leva o das notas. Turma e matéria não mudam |
+| `PUT /tipos-avaliacao/ordem` | dono, admin | `{ ids: [...] }`: nova ordem (1, 2, 3…) numa operação só |
+| `DELETE /tipos-avaliacao/:id` | dono, admin | 204. As notas dela saem junto |
+| `GET /notas?aluno_id=&tipo_avaliacao_id=&bimestre=&turma_id=&disciplina_id=` | logado | Notas com `tipos_avaliacao: { nome, peso, bimestre, disciplina_id, turma_id, categoria }`. `aluno_id` e `tipo_avaliacao_id` aceitam vários |
+| `PUT /notas` | dono, admin | `{ notas: [{ aluno_id, tipo_avaliacao_id, nota, observacoes? }] }` (até 2000). `nota` de 0 a 10; `null` apaga. Tudo ou nada. Devolve `{ salvas, apagadas }` |
+
+`categoria`: `normal` (padrão) ou `prova_paulista`. O bimestre e o dono da nota vêm da avaliação. O aluno precisa ser
+da turma da avaliação ou membro da eletiva. Erros: `DADOS_INVALIDOS` (400), `TURMA_INVALIDA` / `DISCIPLINA_INVALIDA` /
+`ALUNO_INVALIDO` / `ALUNO_FORA_DA_TURMA` (400), `SEM_PERMISSAO` (403), `AVALIACAO_NAO_ENCONTRADA` (404).
+
+### Médias arredondadas
+
+A média final que o professor ajusta à mão (6,8 → 7). Padrão A; uma por aluno, matéria e bimestre, no nome do
+professor dono da matéria (mesmo quando o admin altera). `nota_arredondada` sai como número.
+
+| Rota | Quem | O que faz |
+|---|---|---|
+| `GET /medias-arredondadas?turma_id=&disciplina_id=&bimestre=&aluno_id=` | logado | Ajustes guardados. `aluno_id` aceita vários |
+| `PUT /medias-arredondadas` | dono, admin | `{ turma_id, disciplina_id, bimestre, medias: [{ aluno_id, nota_arredondada, manual? }] }` (até 2000). De 0 a 10; `null` volta ao cálculo automático. Tudo ou nada. Devolve `{ salvas, apagadas }` |
+| `POST /medias-arredondadas/descartar` | dono, admin | `{ turma_id, disciplina_id, bimestre, aluno_ids? }`: "descartar todas" (ou só as desses alunos). Devolve `{ apagadas }` |
+
+Erros: `DADOS_INVALIDOS` (400), `TURMA_INVALIDA` / `DISCIPLINA_INVALIDA` / `ALUNO_INVALIDO` / `ALUNO_FORA_DA_TURMA` (400),
+`SEM_PERMISSAO` (403).
+
+## Provas e gabaritos
+
+Tela "Correção de Provas". Padrão A (o professor altera as próprias provas; a gestão vê todas; o admin pode tudo).
+`valor_total` e `peso` saem como número; `data_aplicacao` como `AAAA-MM-DD`.
+
+| Rota | Quem | O que faz |
+|---|---|---|
+| `GET /provas?turma_id=&disciplina_id=&bimestre=` | logado | Provas (mais novas primeiro) com `turmas: { nome, serie }` e `disciplinas: { nome }` |
+| `GET /provas/:id` | dono, gestão | Uma prova |
+| `POST /provas` | logado | `{ titulo, turma_id?, disciplina_id?, bimestre?, numero_questoes?, data_aplicacao?, valor_total?, observacoes?, escola?, professor? }`. Padrões: 10 questões (1 a 100), valor 10, 1º bimestre |
+| `PATCH /provas/:id` | dono, admin | Altera só o enviado. Menos questões apaga o gabarito das que sobram. Com respostas de alunos, a turma não muda (409 `PROVA_COM_RESULTADOS`) |
+| `DELETE /provas/:id` | dono, admin | 204. Gabarito e respostas saem junto |
+| `GET /provas/:id/gabarito` | dono, gestão | Gabarito em ordem de questão |
+| `PUT /provas/:id/gabarito` | dono, admin | `{ questoes: [{ numero_questao, resposta_correta, anulada?, peso? }] }`: o gabarito inteiro (as que não vierem saem). Alternativas `A` a `E` |
+
+Erros: `DADOS_INVALIDOS` (400), `TURMA_INVALIDA` / `DISCIPLINA_INVALIDA` (400), `SEM_PERMISSAO` (403),
+`PROVA_NAO_ENCONTRADA` (404), `PROVA_COM_RESULTADOS` (409).
+
+### Correção
+
+O backend confere as respostas com o gabarito e calcula `acertos` e `nota`, com a mesma conta da tela: questão
+anulada vale acerto para todos; nota = acertos ÷ número de questões × `valor_total` (2 casas). Mudar o gabarito,
+o número de questões ou o valor **recalcula** as notas já corrigidas, menos as ajustadas à mão.
+
+| Rota | Quem | O que faz |
+|---|---|---|
+| `GET /provas/:id/resultados` | dono, gestão | Folhas corrigidas, em ordem de chamada, com `alunos: { nome, numero_chamada }` |
+| `PUT /provas/:id/resultados` | dono, admin | `{ resultados: [{ aluno_id, respostas: { "1": "A", ... }, nota?, observacoes? }] }` (até 500). Com `nota` (0 até o valor), vira ajuste manual; `null` volta ao automático. Tudo ou nada |
+| `DELETE /provas/:id/resultados/:alunoId` | dono, admin | 204. Apaga a folha de um aluno |
+
+Erros: `DADOS_INVALIDOS` / `ALUNO_INVALIDO` / `ALUNO_FORA_DA_TURMA` (400), `SEM_PERMISSAO` (403),
+`PROVA_NAO_ENCONTRADA` / `RESULTADO_NAO_ENCONTRADO` (404), `PROVA_SEM_TURMA` / `PROVA_SEM_GABARITO` (409).
+
+## Planejamento bimestral
+
+Padrão A para ver (o professor vê os seus; a gestão, todos) e fluxo de validação pela gestão.
+
+| Rota | Quem | O que faz |
+|---|---|---|
+| `GET /planejamentos?bimestre=&ano=&turma_id=&disciplina_id=&user_id=` | logado | Planejamentos (ano mais recente primeiro) com `turmas: { nome, serie }` e `disciplinas: { nome }` |
+| `GET /planejamentos/:id` | dono, gestão | Um planejamento |
+| `POST /planejamentos` | logado | `{ turma_id, disciplina_id?, bimestre, ano? }`. Devolve o que já existe (200) ou cria um rascunho (201). Ano padrão: o atual |
+| `POST /planejamentos/:id/status` | ver abaixo | `{ status, observacao? }` |
+| `DELETE /planejamentos/:id` | dono, admin | 204. As aulas continuam, fora do planejamento. Validado não sai (409 `PLANEJAMENTO_VALIDADO`) |
+
+| De | Para | Quem |
+|---|---|---|
+| `rascunho` | `aguardando_validacao` | dono (ou admin) |
+| `rascunho` ou `aguardando_validacao` | `validado` | gestão; grava `validado_por` e `validado_em` |
+| `aguardando_validacao` ("solicitar ajustes") ou `validado` ("reabrir") | `rascunho` | gestão; limpa `validado_por` e `validado_em` |
+
+Erros: `DADOS_INVALIDOS` / `TURMA_INVALIDA` / `DISCIPLINA_INVALIDA` (400), `SEM_PERMISSAO` (403),
+`PLANEJAMENTO_NAO_ENCONTRADO` (404), `STATUS_INVALIDO` / `PLANEJAMENTO_VALIDADO` (409).
+
+## Planos de aula
+
+As aulas da planilha do planejamento (ou soltas). Padrão A. `data_aula` sai como `AAAA-MM-DD`; o `dia_semana` é
+calculado a partir da data. **Aulas de um planejamento validado não mudam** (409 `PLANEJAMENTO_VALIDADO`), nem pelo
+admin: a gestão precisa reabrir.
+
+| Rota | Quem | O que faz |
+|---|---|---|
+| `GET /planos-aula?planejamento_id=&turma_id=&disciplina_id=&bimestre=&user_id=&status=&data=&de=&ate=&limite=` | logado | Aulas em ordem de data, com `turmas: { nome, serie }` e `disciplinas: { nome }` |
+| `GET /planos-aula/:id` | dono, gestão | Uma aula |
+| `POST /planos-aula` | logado | `{ data_aula, planejamento_id?, turma_id?, disciplina_id?, bimestre?, numero_aulas?, ...textos }`. No planejamento, turma, matéria, bimestre e dono vêm dele |
+| `POST /planejamentos/:id/aulas` | dono, admin | `{ datas: [...], numero_aulas? }` (até 200): "datas em sequência" |
+| `PATCH /planos-aula/:id` | dono, admin | Altera só o enviado (data, número de aulas, textos). Turma, matéria e bimestre só em aula solta |
+| `PATCH /planos-aula/lote` | dono, admin | `{ ids, dados }` (até 200): "copiar para baixo". Devolve `{ alteradas }` |
+| `DELETE /planos-aula/:id` | dono, admin | 204. Anexos e ajustes saem junto; as cópias ficam, sem a ligação |
+| `POST /planos-aula/:id/duplicar` | dono, admin | `{ data_aula? }` (padrão: uma semana depois). Cópia pendente, com `duplicado_de` |
+| `GET /planos-aula/:id/ajustes` | dono, gestão | Histórico de ajustes (PDCA), o mais novo primeiro |
+| `POST /planos-aula/:id/ajustes` | dono, admin | `{ descricao }` |
+
+Textos: `aprendizagem_essencial`, `conteudo`, `objetivos`, `recursos`, `desenvolvimento`, `material_digital`,
+`avaliacao_aprendizagem`, `professor`, `habilidades`, `objetivo_geral` (vazio apaga). Erros: `DADOS_INVALIDOS` /
+`TURMA_INVALIDA` / `DISCIPLINA_INVALIDA` (400), `SEM_PERMISSAO` (403), `PLANO_NAO_ENCONTRADO` /
+`PLANEJAMENTO_NAO_ENCONTRADO` (404), `PLANEJAMENTO_VALIDADO` (409).
+
+### Aprovação e anexos
+
+| Rota | Quem | O que faz |
+|---|---|---|
+| `POST /planos-aula/aprovacao` | gestão | `{ ids, status, comentario? }` (até 200). `aprovado`, `ajustado` (devolvida para ajuste) ou `pendente`. Grava `aprovado_por`, `data_aprovacao`, `comentario_aprovacao` |
+| `GET /planos-aula/:id/anexos?tipo=` | dono, gestão | Anexos (`documento` ou `adaptada`). Para abrir: `GET /files/plano-anexos/url?path=<storage_path>` |
+| `POST /planos-aula/:id/anexos?tipo=&nome=` | dono, admin | Corpo: o arquivo, com o `Content-Type` (até 20 MB). Fica na pasta do professor dono |
+| `DELETE /planos-aula/:id/anexos/:anexoId` | dono, admin | 204. Apaga a linha e o arquivo |
+
+Aula aprovada ou devolvida que o professor edita **volta a pendente** (o comentário fica). Excluir a aula apaga os
+arquivos dos anexos. Planilha validada não recebe nem perde anexos. Erros extras: `ANEXO_NAO_ENCONTRADO` (404),
+`ARQUIVO_GRANDE_DEMAIS` (413), `TIPO_NAO_PERMITIDO` (415).
 
 ## Collection do Bruno
 

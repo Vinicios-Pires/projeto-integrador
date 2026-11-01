@@ -1,0 +1,28 @@
+meta {
+  name: Ver gabarito
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{baseUrl}}/provas/{{provaId}}/gabarito
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("gabarito da prova", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body).to.be.an("array");
+  });
+}
+
+docs {
+  O gabarito da prova, em ordem de questão. Dono e gestão veem.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `PROVA_NAO_ENCONTRADA` (404).
+}

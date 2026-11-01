@@ -1,0 +1,46 @@
+meta {
+  name: Criar prova
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/provas
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "titulo": "Avaliação de Ciências",
+    "turma_id": "{{turmaId}}",
+    "disciplina_id": "{{disciplinaId}}",
+    "bimestre": 1,
+    "numero_questoes": 5,
+    "data_aplicacao": "2026-11-10",
+    "valor_total": 10
+  }
+}
+
+script:post-response {
+  if (res.status === 201) bru.setEnvVar("provaId", res.body.id);
+}
+
+tests {
+  test("prova criada", function () {
+    expect(res.status).to.equal(201);
+    expect(res.body.numero_questoes).to.equal(5);
+  });
+}
+
+docs {
+  Cria uma prova de múltipla escolha. Só `titulo` é obrigatório; `turma_id` e `disciplina_id` são opcionais
+  (precisam ser suas). Padrões: 10 questões (de 1 a 100), valor 10, 1º bimestre. Guarda o id em `provaId`.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400), `TURMA_INVALIDA` (400),
+  `DISCIPLINA_INVALIDA` (400).
+}

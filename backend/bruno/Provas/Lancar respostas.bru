@@ -1,0 +1,44 @@
+meta {
+  name: Lancar respostas
+  type: http
+  seq: 6
+}
+
+put {
+  url: {{baseUrl}}/provas/{{provaId}}/resultados
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "resultados": [
+      { "aluno_id": "{{alunoId}}", "respostas": { "1": "A", "2": "C", "3": "B", "4": "B", "5": "A" } }
+    ]
+  }
+}
+
+tests {
+  test("respostas corrigidas", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body[0].acertos).to.be.a("number");
+    expect(res.body[0].nota).to.be.a("number");
+  });
+}
+
+docs {
+  Lança (ou corrige) as respostas de um ou vários alunos: `respostas` é `{ "nº da questão": "A".."E" }`
+  (questão em branco pode ficar de fora ou vir como `""`). **O backend confere com o gabarito** e calcula
+  `acertos` e `nota` (anulada vale acerto; nota = acertos ÷ nº de questões × valor da prova). Com `nota`, ela
+  vale como **ajuste manual** e não muda se o gabarito mudar; `nota: null` volta ao cálculo automático.
+  O aluno precisa ser da turma da prova (ou membro da eletiva). **Ou entra tudo, ou nada.** Usa `alunoId`
+  (rode *Alunos > Cadastrar aluno* na turma da prova) e precisa do gabarito salvo.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400), `ALUNO_INVALIDO` (400),
+  `ALUNO_FORA_DA_TURMA` (400), `SEM_PERMISSAO` (403), `PROVA_NAO_ENCONTRADA` (404), `PROVA_SEM_TURMA` (409),
+  `PROVA_SEM_GABARITO` (409).
+}

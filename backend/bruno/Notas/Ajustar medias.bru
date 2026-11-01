@@ -1,0 +1,45 @@
+meta {
+  name: Ajustar medias
+  type: http
+  seq: 8
+}
+
+put {
+  url: {{baseUrl}}/medias-arredondadas
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "turma_id": "{{turmaId}}",
+    "disciplina_id": "{{disciplinaId}}",
+    "bimestre": 1,
+    "medias": [
+      { "aluno_id": "{{alunoId}}", "nota_arredondada": 7, "manual": true }
+    ]
+  }
+}
+
+tests {
+  test("média ajustada", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body.salvas[0].nota_arredondada).to.equal(7);
+  });
+}
+
+docs {
+  Guarda a **média final ajustada à mão** (ex.: 6,8 vira 7) de um ou vários alunos da planilha (turma,
+  matéria e bimestre). `nota_arredondada` de 0 a 10; `null` apaga o ajuste e o aluno volta ao cálculo
+  automático. Corrigir atualiza o mesmo ajuste. O ajuste fica no nome do professor dono da matéria, mesmo
+  quando o admin altera. O aluno precisa ser da turma (ou membro, se for eletiva). **Ou entra tudo, ou nada.**
+
+  Resposta: `{ salvas: [...], apagadas: n }`.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400), `TURMA_INVALIDA` (400),
+  `DISCIPLINA_INVALIDA` (400), `ALUNO_INVALIDO` (400), `ALUNO_FORA_DA_TURMA` (400), `SEM_PERMISSAO` (403).
+}

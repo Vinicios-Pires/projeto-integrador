@@ -8,6 +8,10 @@ import { alunosRouter } from './modules/alunos/alunos.routes';
 import { disciplinasRouter } from './modules/disciplinas/disciplinas.routes';
 import { calendarioRouter } from './modules/calendario/calendario.routes';
 import { filesRouter } from './modules/files/files.routes';
+import { avaliacoesRouter } from './modules/avaliacoes/avaliacoes.routes';
+import { provasRouter } from './modules/provas/provas.routes';
+import { planejamentosRouter } from './modules/planejamentos/planejamentos.routes';
+import { planosRouter } from './modules/planos/planos.routes';
 import { errorHandler, notFound } from './middlewares/error-handler';
 
 export const app = express();
@@ -35,6 +39,10 @@ app.use(alunosRouter);
 app.use(disciplinasRouter);
 app.use(calendarioRouter);
 app.use(filesRouter);
+app.use(avaliacoesRouter);
+app.use(provasRouter);
+app.use(planejamentosRouter);
+app.use(planosRouter);
 
 app.use(notFound);
 app.use(errorHandler);

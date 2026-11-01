@@ -1,0 +1,41 @@
+meta {
+  name: Adicionar aulas
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/planejamentos/{{planejamentoId}}/aulas
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "datas": ["2026-05-04", "2026-05-06", "2026-05-08"]
+  }
+}
+
+script:post-response {
+  if (res.status === 201) bru.setEnvVar("planoId", res.body[0].id);
+}
+
+tests {
+  test("aulas adicionadas", function () {
+    expect(res.status).to.equal(201);
+    expect(res.body).to.have.length(3);
+  });
+}
+
+docs {
+  "Datas em sequência": adiciona uma aula por data (até 200) no planejamento de `planejamentoId`. Turma,
+  matéria, bimestre e dono vêm do planejamento; o dia da semana é calculado. Guarda o id da primeira em
+  `planoId`. Para uma aula só, mande uma data (ou use `POST /planos-aula` com `planejamento_id`).
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400), `SEM_PERMISSAO` (403),
+  `PLANEJAMENTO_NAO_ENCONTRADO` (404), `PLANEJAMENTO_VALIDADO` (409).
+}

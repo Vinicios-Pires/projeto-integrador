@@ -1,0 +1,34 @@
+meta {
+  name: Listar aulas
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/planos-aula?planejamento_id={{planejamentoId}}
+  body: none
+  auth: bearer
+}
+
+params:query {
+  planejamento_id: {{planejamentoId}}
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("aulas do planejamento", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body).to.be.an("array");
+  });
+}
+
+docs {
+  Lista os planos de aula em ordem de data, com `turmas: { nome, serie }` e `disciplinas: { nome }`. Filtros:
+  `planejamento_id`, `turma_id`, `disciplina_id`, `bimestre`, `user_id`, `status`, `data` (um dia), `de` e
+  `ate` (período, `AAAA-MM-DD`), `limite` (1 a 1000). O professor vê os seus; a gestão, todos.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400).
+}

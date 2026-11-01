@@ -1,0 +1,35 @@
+meta {
+  name: Listar medias
+  type: http
+  seq: 9
+}
+
+get {
+  url: {{baseUrl}}/medias-arredondadas?turma_id={{turmaId}}&disciplina_id={{disciplinaId}}&bimestre=1
+  body: none
+  auth: bearer
+}
+
+params:query {
+  turma_id: {{turmaId}}
+  disciplina_id: {{disciplinaId}}
+  bimestre: 1
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("lista as médias ajustadas", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body).to.be.an("array");
+  });
+}
+
+docs {
+  Lista as médias ajustadas à mão. Filtros: `turma_id`, `disciplina_id`, `bimestre` e `aluno_id` (um ou
+  vários, `a,b`). O professor vê as próprias; a gestão vê todas. `nota_arredondada` sai como número.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400).
+}

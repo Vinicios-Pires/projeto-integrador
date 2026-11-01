@@ -1,0 +1,35 @@
+meta {
+  name: Listar avaliacoes
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/tipos-avaliacao?turma_id={{turmaId}}&disciplina_id={{disciplinaId}}&bimestre=1
+  body: none
+  auth: bearer
+}
+
+params:query {
+  turma_id: {{turmaId}}
+  disciplina_id: {{disciplinaId}}
+  bimestre: 1
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("avaliações devolvidas", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body).to.be.an("array");
+  });
+}
+
+docs {
+  Lista as avaliações na ordem das colunas. Filtros opcionais: `turma_id`, `disciplina_id`, `bimestre`.
+  O **professor vê as próprias**; a **gestão e o admin, todas**.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400).
+}

@@ -1,0 +1,43 @@
+meta {
+  name: Salvar gabarito
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{baseUrl}}/provas/{{provaId}}/gabarito
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "questoes": [
+      { "numero_questao": 1, "resposta_correta": "A" },
+      { "numero_questao": 2, "resposta_correta": "C" },
+      { "numero_questao": 3, "resposta_correta": "E", "anulada": true },
+      { "numero_questao": 4, "resposta_correta": "B" },
+      { "numero_questao": 5, "resposta_correta": "D" }
+    ]
+  }
+}
+
+tests {
+  test("gabarito salvo", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body).to.have.length(5);
+  });
+}
+
+docs {
+  Salva o **gabarito inteiro**: a resposta certa (A a E) de cada questão, de 1 até o número de questões da
+  prova. As questões que não vierem saem. `anulada: true` conta como acerto para todos. `peso` opcional
+  (padrão 1). Devolve o gabarito em ordem.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400), `SEM_PERMISSAO` (403),
+  `PROVA_NAO_ENCONTRADA` (404).
+}

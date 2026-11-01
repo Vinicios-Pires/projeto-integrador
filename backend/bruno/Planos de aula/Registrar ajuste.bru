@@ -1,0 +1,35 @@
+meta {
+  name: Registrar ajuste
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/planos-aula/{{planoId}}/ajustes
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "descricao": "A turma precisou de mais exemplos."
+  }
+}
+
+tests {
+  test("ajuste registrado", function () {
+    expect(res.status).to.equal(201);
+  });
+}
+
+docs {
+  Registra um ajuste (PDCA) na aula. O histórico sai em `GET /planos-aula/:id/ajustes`, o mais novo primeiro
+  (dono e gestão veem). Só o dono (ou o admin), com o planejamento aberto.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400), `SEM_PERMISSAO` (403),
+  `PLANO_NAO_ENCONTRADO` (404), `PLANEJAMENTO_VALIDADO` (409).
+}

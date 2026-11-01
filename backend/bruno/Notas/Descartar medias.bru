@@ -1,0 +1,40 @@
+meta {
+  name: Descartar medias
+  type: http
+  seq: 10
+}
+
+post {
+  url: {{baseUrl}}/medias-arredondadas/descartar
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "turma_id": "{{turmaId}}",
+    "disciplina_id": "{{disciplinaId}}",
+    "bimestre": 1
+  }
+}
+
+tests {
+  test("ajustes descartados", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body.apagadas).to.be.a("number");
+  });
+}
+
+docs {
+  Botão **"descartar todas"**: apaga os ajustes da planilha (turma, matéria e bimestre) e todos voltam ao
+  cálculo automático. As notas não mudam. Com `aluno_ids: [...]`, descarta só os desses alunos.
+
+  Resposta: `{ apagadas: n }`.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400), `TURMA_INVALIDA` (400),
+  `DISCIPLINA_INVALIDA` (400), `SEM_PERMISSAO` (403).
+}

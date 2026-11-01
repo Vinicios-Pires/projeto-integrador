@@ -1,0 +1,42 @@
+meta {
+  name: Lancar notas
+  type: http
+  seq: 5
+}
+
+put {
+  url: {{baseUrl}}/notas
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "notas": [
+      { "aluno_id": "{{alunoId}}", "tipo_avaliacao_id": "{{tipoAvaliacaoId}}", "nota": 8.5 }
+    ]
+  }
+}
+
+tests {
+  test("notas lançadas", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body.salvas[0].nota).to.equal(8.5);
+  });
+}
+
+docs {
+  Lança ou corrige **várias notas de uma vez** (uma célula da planilha é uma lista de um item).
+  `nota` de 0 a 10; `null` apaga. O bimestre e o dono vêm da avaliação. O aluno precisa ser da turma da
+  avaliação (ou membro, se for eletiva). **Ou entra tudo, ou nada.** Usa `alunoId` (rode
+  *Alunos > Cadastrar aluno* na mesma turma).
+
+  Resposta: `{ salvas: [...], apagadas: n }`.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400), `ALUNO_INVALIDO` (400),
+  `ALUNO_FORA_DA_TURMA` (400), `SEM_PERMISSAO` (403), `AVALIACAO_NAO_ENCONTRADA` (404).
+}

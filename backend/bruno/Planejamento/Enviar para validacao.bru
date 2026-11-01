@@ -1,0 +1,41 @@
+meta {
+  name: Enviar para validacao
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/planejamentos/{{planejamentoId}}/status
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "status": "aguardando_validacao"
+  }
+}
+
+tests {
+  test("enviado para validação", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body.status).to.equal("aguardando_validacao");
+  });
+}
+
+docs {
+  Muda a situação do planejamento com `{ status, observacao? }`. As mudanças possíveis:
+
+  | De | Para | Quem |
+  |---|---|---|
+  | rascunho | `aguardando_validacao` | dono (ou admin) |
+  | rascunho ou aguardando | `validado` | gestão (grava quem validou e quando) |
+  | aguardando ("solicitar ajustes") ou validado ("reabrir") | `rascunho` | gestão |
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400), `SEM_PERMISSAO` (403),
+  `PLANEJAMENTO_NAO_ENCONTRADO` (404), `STATUS_INVALIDO` (409).
+}

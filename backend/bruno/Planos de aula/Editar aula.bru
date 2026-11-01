@@ -1,0 +1,41 @@
+meta {
+  name: Editar aula
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{baseUrl}}/planos-aula/{{planoId}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "conteudo": "Substantivos próprios e comuns",
+    "recursos": "Livro didático"
+  }
+}
+
+tests {
+  test("aula alterada", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body.conteudo).to.equal("Substantivos próprios e comuns");
+  });
+}
+
+docs {
+  Altera só os campos enviados: `data_aula`, `numero_aulas`, `aulas_previstas` e os textos
+  (`aprendizagem_essencial`, `conteudo`, `objetivos`, `recursos`, `desenvolvimento`, `material_digital`,
+  `avaliacao_aprendizagem`, `professor`, `habilidades`, `objetivo_geral`). Texto vazio apaga. Turma, matéria e
+  bimestre só mudam em aula fora de planejamento. **Planejamento validado não muda.**
+
+  Para o mesmo valor em várias aulas ("copiar para baixo"): `PATCH /planos-aula/lote` com `{ ids, dados }`.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400), `TURMA_INVALIDA` (400),
+  `SEM_PERMISSAO` (403), `PLANO_NAO_ENCONTRADO` (404), `PLANEJAMENTO_VALIDADO` (409).
+}
