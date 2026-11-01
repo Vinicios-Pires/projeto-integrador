@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { api, mensagemDeErro, type LinhaSolta } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/hooks/use-permissions';
 import { useAgenda, useGradeHorario, resolveAula, type BlocoHorario, type RotinaItem } from '@/hooks/use-agenda';
@@ -122,11 +122,11 @@ function GradeSemanal({ grade, rotina, excecoes, refDate, onClickCell, eventos, 
   const [turmas, setTurmas] = useState<Record<string, any>>({});
   useEffect(() => {
     Promise.all([
-      supabase.from('disciplinas').select('id,nome,cor'),
-      supabase.from('turmas').select('id,nome'),
+      api.get<LinhaSolta[]>('/disciplinas').catch(() => []),
+      api.get<LinhaSolta[]>('/turmas').catch(() => []),
     ]).then(([d, t]) => {
-      setDisciplinas(Object.fromEntries((d.data || []).map((x: any) => [x.id, x])));
-      setTurmas(Object.fromEntries((t.data || []).map((x: any) => [x.id, x])));
+      setDisciplinas(Object.fromEntries(d.map((x: any) => [x.id, x])));
+      setTurmas(Object.fromEntries(t.map((x: any) => [x.id, x])));
     });
   }, []);
 
@@ -200,11 +200,11 @@ function VisaoDia({ grade, rotina, excecoes, data, onClickCell, eventos, apoios 
   const [turmas, setTurmas] = useState<Record<string, any>>({});
   useEffect(() => {
     Promise.all([
-      supabase.from('disciplinas').select('id,nome,cor'),
-      supabase.from('turmas').select('id,nome'),
+      api.get<LinhaSolta[]>('/disciplinas').catch(() => []),
+      api.get<LinhaSolta[]>('/turmas').catch(() => []),
     ]).then(([d, t]) => {
-      setDisciplinas(Object.fromEntries((d.data || []).map((x: any) => [x.id, x])));
-      setTurmas(Object.fromEntries((t.data || []).map((x: any) => [x.id, x])));
+      setDisciplinas(Object.fromEntries(d.map((x: any) => [x.id, x])));
+      setTurmas(Object.fromEntries(t.map((x: any) => [x.id, x])));
     });
   }, []);
   const iso = fmtDate(data);
@@ -345,14 +345,12 @@ function PainelAula({ data, bloco, rotina, excecoes, onClose }: any) {
 
   useEffect(() => {
     Promise.all([
-      supabase.from('disciplinas').select('id,nome,cor').order('nome'),
-      supabase.from('turmas').select('id,nome').order('nome'),
-    ]).then(([d, t]) => { setDisciplinas(d.data || []); setTurmas(t.data || []); });
+      api.get<LinhaSolta[]>('/disciplinas').catch(() => []),
+      api.get<LinhaSolta[]>('/turmas').catch(() => []),
+    ]).then(([d, t]) => { setDisciplinas(d); setTurmas(t); });
     if (aula?.turma_id && aula?.disciplina_id) {
-      supabase.from('planos_aula').select('id,status,data_aula')
-        .eq('turma_id', aula.turma_id).eq('disciplina_id', aula.disciplina_id)
-        .eq('data_aula', fmtDate(data)).maybeSingle()
-        .then(({ data: p }) => setPlano(p));
+      api.get<LinhaSolta[]>('/planos-aula', { turma_id: aula.turma_id, disciplina_id: aula.disciplina_id, data: fmtDate(data), limite: 1 })
+        .then(l => setPlano(l[0] ?? null), () => setPlano(null));
     }
   }, []);
 
@@ -363,27 +361,23 @@ function PainelAula({ data, bloco, rotina, excecoes, onClose }: any) {
       turma_id: turmaId || null,
       atividade: atividade || null,
     };
-    if (recorrencia === 'rotina') {
-      const existing = rotina.find((r: any) => r.dia_semana === data.getDay() && r.horario_grade_id === bloco.id);
-      if (existing) {
-        await supabase.from('agenda_professor').update(payload).eq('id', existing.id);
+    try {
+      // "Grava ou corrige": um item por dia (rotina) ou por data (exceção) e horário.
+      if (recorrencia === 'rotina') {
+        await api.put('/agenda/rotina', { itens: [{ ...payload, dia_semana: data.getDay(), horario_grade_id: bloco.id }] });
+      } else if (recorrencia === 'data') {
+        await api.put('/agenda/excecoes', { itens: [{ ...payload, data: fmtDate(data), horario_grade_id: bloco.id, cancelado: false }] });
       } else {
-        await supabase.from('agenda_professor').insert({ ...payload, user_id: user.id, dia_semana: data.getDay(), horario_grade_id: bloco.id });
+        // futuro: criar exceções para todas as ocorrências do dia da semana até fim do ano
+        const fim = new Date(data.getFullYear(), 11, 31);
+        const datas: string[] = [];
+        for (let d = new Date(data); d <= fim; d = addDays(d, 7)) datas.push(fmtDate(d));
+        const itens = datas.map(dt => ({ ...payload, data: dt, horario_grade_id: bloco.id, cancelado: false }));
+        await api.put('/agenda/excecoes', { itens });
       }
-    } else if (recorrencia === 'data') {
-      const existing = excecoes.find((e: any) => e.data === fmtDate(data) && e.horario_grade_id === bloco.id);
-      if (existing) {
-        await supabase.from('agenda_excecoes').update({ ...payload, cancelado: false }).eq('id', existing.id);
-      } else {
-        await supabase.from('agenda_excecoes').insert({ ...payload, user_id: user.id, data: fmtDate(data), horario_grade_id: bloco.id });
-      }
-    } else {
-      // futuro: criar exceções para todas as ocorrências do dia da semana até fim do ano
-      const fim = new Date(data.getFullYear(), 11, 31);
-      const datas: string[] = [];
-      for (let d = new Date(data); d <= fim; d = addDays(d, 7)) datas.push(fmtDate(d));
-      const rows = datas.map(dt => ({ ...payload, user_id: user.id, data: dt, horario_grade_id: bloco.id, cancelado: false }));
-      await supabase.from('agenda_excecoes').upsert(rows, { onConflict: 'user_id,data,horario_grade_id' });
+    } catch (err) {
+      toast({ title: 'Erro ao salvar', description: mensagemDeErro(err), variant: 'destructive' });
+      return;
     }
     toast({ title: 'Aula salva' });
     refetch();
@@ -393,8 +387,19 @@ function PainelAula({ data, bloco, rotina, excecoes, onClose }: any) {
   const cancelarAula = async () => {
     if (!user) return;
     const existing = excecoes.find((e: any) => e.data === fmtDate(data) && e.horario_grade_id === bloco.id);
-    if (existing) await supabase.from('agenda_excecoes').update({ cancelado: true }).eq('id', existing.id);
-    else await supabase.from('agenda_excecoes').insert({ user_id: user.id, data: fmtDate(data), horario_grade_id: bloco.id, cancelado: true });
+    try {
+      // Mantém o que já estava na exceção, só marcando como cancelada.
+      await api.put('/agenda/excecoes', {
+        itens: [{
+          data: fmtDate(data), horario_grade_id: bloco.id, cancelado: true,
+          turma_id: existing?.turma_id ?? null, disciplina_id: existing?.disciplina_id ?? null,
+          atividade: existing?.atividade ?? null, observacao: existing?.observacao ?? null,
+        }],
+      });
+    } catch (err) {
+      toast({ title: 'Erro ao cancelar', description: mensagemDeErro(err), variant: 'destructive' });
+      return;
+    }
     toast({ title: 'Aula cancelada nesta data' });
     refetch();
     onClose();
@@ -478,9 +483,9 @@ function ConfigurarRotina() {
 
   useEffect(() => {
     Promise.all([
-      supabase.from('disciplinas').select('id,nome,cor').order('nome'),
-      supabase.from('turmas').select('id,nome').order('nome'),
-    ]).then(([d, t]) => { setDisciplinas(d.data || []); setTurmas(t.data || []); });
+      api.get<LinhaSolta[]>('/disciplinas').catch(() => []),
+      api.get<LinhaSolta[]>('/turmas').catch(() => []),
+    ]).then(([d, t]) => { setDisciplinas(d); setTurmas(t); });
   }, []);
 
   const get = (dia: number, horarioId: string) =>
@@ -489,12 +494,16 @@ function ConfigurarRotina() {
   const set = async (dia: number, horarioId: string, patch: Partial<RotinaItem>) => {
     if (!user) return;
     const existing = get(dia, horarioId);
-    if (existing) {
-      await supabase.from('agenda_professor').update(patch).eq('id', existing.id);
-    } else {
-      await supabase.from('agenda_professor').insert({
-        user_id: user.id, dia_semana: dia, horario_grade_id: horarioId, ...patch,
-      });
+    const item = {
+      dia_semana: dia, horario_grade_id: horarioId,
+      turma_id: existing?.turma_id ?? null, disciplina_id: existing?.disciplina_id ?? null,
+      atividade: existing?.atividade ?? null, cor: existing?.cor ?? null,
+      ...patch,
+    };
+    try {
+      await api.put('/agenda/rotina', { itens: [item] });
+    } catch (err) {
+      toast({ title: 'Erro ao salvar', description: mensagemDeErro(err), variant: 'destructive' });
     }
     refetch();
   };
@@ -502,7 +511,11 @@ function ConfigurarRotina() {
   const limpar = async (dia: number, horarioId: string) => {
     const existing = get(dia, horarioId);
     if (existing) {
-      await supabase.from('agenda_professor').delete().eq('id', existing.id);
+      try {
+        await api.delete(`/agenda/rotina/${existing.id}`);
+      } catch (err) {
+        toast({ title: 'Erro ao limpar', description: mensagemDeErro(err), variant: 'destructive' });
+      }
       refetch();
     }
   };
@@ -510,12 +523,18 @@ function ConfigurarRotina() {
   const replicarSegunda = async () => {
     if (!user) return;
     const base = rotina.filter(r => r.dia_semana === 1);
-    for (const dia of [2, 3, 4, 5]) {
-      for (const b of base) {
-        const ex = get(dia, b.horario_grade_id);
-        const payload = { disciplina_id: b.disciplina_id, turma_id: b.turma_id, atividade: b.atividade };
-        if (ex) await supabase.from('agenda_professor').update(payload).eq('id', ex.id);
-        else await supabase.from('agenda_professor').insert({ ...payload, user_id: user.id, dia_semana: dia, horario_grade_id: b.horario_grade_id });
+    // Num pedido só: a segunda copiada para terça a sexta (a cor de cada célula fica como estava).
+    const itens = [2, 3, 4, 5].flatMap(dia => base.map(b => ({
+      dia_semana: dia, horario_grade_id: b.horario_grade_id,
+      disciplina_id: b.disciplina_id, turma_id: b.turma_id, atividade: b.atividade,
+      cor: get(dia, b.horario_grade_id)?.cor ?? null,
+    })));
+    if (itens.length) {
+      try {
+        await api.put('/agenda/rotina', { itens });
+      } catch (err) {
+        toast({ title: 'Erro ao replicar', description: mensagemDeErro(err), variant: 'destructive' });
+        return;
       }
     }
     toast({ title: 'Segunda replicada para a semana' });
@@ -591,22 +610,32 @@ function AgendaEscola({ podeEditar }: { podeEditar: boolean }) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<any>({ titulo: '', descricao: '', tipo: 'aviso', data_inicio: '', data_fim: '', dia_todo: false });
 
-  const load = () => supabase.from('agenda_escola_eventos').select('*').order('data_inicio', { ascending: false }).then(({ data }) => setItems(data || []));
+  // Os mais recentes primeiro.
+  const load = () => api.get<LinhaSolta[]>('/eventos-escola').then(l => setItems([...l].reverse()), () => setItems([]));
   useEffect(() => { load(); }, []);
 
   const salvar = async () => {
     if (!user || !form.titulo || !form.data_inicio) { toast({ title: 'Preencha título e data' }); return; }
-    await supabase.from('agenda_escola_eventos').insert({
-      criado_por: user.id, titulo: form.titulo, descricao: form.descricao || null,
-      tipo: form.tipo, data_inicio: form.data_inicio, data_fim: form.data_fim || null, dia_todo: form.dia_todo,
-    });
+    try {
+      await api.post('/eventos-escola', {
+        titulo: form.titulo, descricao: form.descricao || null,
+        tipo: form.tipo, data_inicio: form.data_inicio, data_fim: form.data_fim || null, dia_todo: form.dia_todo,
+      });
+    } catch (err) {
+      toast({ title: 'Erro ao criar o evento', description: mensagemDeErro(err), variant: 'destructive' });
+      return;
+    }
     toast({ title: 'Evento criado' });
     setOpen(false); setForm({ titulo: '', descricao: '', tipo: 'aviso', data_inicio: '', data_fim: '', dia_todo: false });
     load();
   };
 
   const remover = async (id: string) => {
-    await supabase.from('agenda_escola_eventos').delete().eq('id', id);
+    try {
+      await api.delete(`/eventos-escola/${id}`);
+    } catch (err) {
+      toast({ title: 'Erro ao remover', description: mensagemDeErro(err), variant: 'destructive' });
+    }
     load();
   };
 
@@ -677,26 +706,45 @@ function ApoioPresencialPanel({ podeEditar }: { podeEditar: boolean }) {
   const [form, setForm] = useState<any>({ data: '', horario_grade_id: '', professor_id: '', responsavel_id: '', observacao: '' });
 
   const load = async () => {
-    const { data } = await supabase.from('apoio_presencial').select('*').order('data', { ascending: false });
-    setItems(data || []);
+    // Os mais recentes primeiro; cada apoio já vem com os nomes do professor e do responsável.
+    setItems(await api.get<LinhaSolta[]>('/apoio-presencial').then(l => [...l].reverse(), () => []));
   };
   useEffect(() => {
     load();
-    supabase.from('profiles').select('id,nome,email').eq('status', 'ativo').order('nome').then(({ data }) => setProfessores(data || []));
-  }, []);
+    // A lista de pessoas (para marcar um apoio) é da gestão.
+    if (podeEditar) {
+      api.get<LinhaSolta[]>('/users', { status: 'ativo' })
+        .then(l => setProfessores([...l].sort((a, b) => (a.nome || '').localeCompare(b.nome || ''))), () => setProfessores([]));
+    }
+  }, [podeEditar]);
 
-  const nome = (id: string) => professores.find(p => p.id === id)?.nome || professores.find(p => p.id === id)?.email || '—';
+  const nome = (id: string) => {
+    const doApoio = items.find(a => a.professor_id === id)?.professor_nome ?? items.find(a => a.responsavel_id === id)?.responsavel_nome;
+    return doApoio || professores.find(p => p.id === id)?.nome || professores.find(p => p.id === id)?.email || '—';
+  };
   const horarioRot = (id: string | null) => grade.find(g => g.id === id)?.rotulo || '—';
 
   const salvar = async () => {
     if (!user || !form.data || !form.professor_id || !form.responsavel_id) { toast({ title: 'Preencha data, professor e responsável' }); return; }
-    await supabase.from('apoio_presencial').insert({ criado_por: user.id, ...form, horario_grade_id: form.horario_grade_id || null });
+    try {
+      await api.post('/apoio-presencial', { ...form, horario_grade_id: form.horario_grade_id || null });
+    } catch (err) {
+      toast({ title: 'Erro ao registrar', description: mensagemDeErro(err), variant: 'destructive' });
+      return;
+    }
     toast({ title: 'Apoio registrado' });
     setOpen(false); setForm({ data: '', horario_grade_id: '', professor_id: '', responsavel_id: '', observacao: '' });
     load();
   };
 
-  const remover = async (id: string) => { await supabase.from('apoio_presencial').delete().eq('id', id); load(); };
+  const remover = async (id: string) => {
+    try {
+      await api.delete(`/apoio-presencial/${id}`);
+    } catch (err) {
+      toast({ title: 'Erro ao remover', description: mensagemDeErro(err), variant: 'destructive' });
+    }
+    load();
+  };
 
   return (
     <div className="space-y-3">

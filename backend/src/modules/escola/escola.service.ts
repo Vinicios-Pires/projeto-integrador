@@ -101,8 +101,16 @@ export async function deleteEvento(id: string): Promise<void> {
 export type ApoioRow = Omit<apoio_presencial, 'data'> & { data: string };
 const toApoio = (a: apoio_presencial): ApoioRow => ({ ...a, data: a.data.toISOString().slice(0, 10) });
 
+const comNomes = {
+  professor: { select: { profile: { select: { nome: true } } } },
+  responsavel: { select: { profile: { select: { nome: true } } } },
+} satisfies Prisma.apoio_presencialInclude;
+
+/** Na lista, vêm também os nomes (o professor não pode ler a lista de usuários para descobri-los). */
+export type ApoioComNomes = ApoioRow & { professor_nome: string | null; responsavel_nome: string | null };
+
 /** A gestão vê todos; o professor, só os seus (como professor acompanhado ou como responsável). */
-export async function listApoios(auth: SessionUser, f: { de?: string; ate?: string; professor_id?: string }): Promise<ApoioRow[]> {
+export async function listApoios(auth: SessionUser, f: { de?: string; ate?: string; professor_id?: string }): Promise<ApoioComNomes[]> {
   const [professor_id] = listaDeIds(f.professor_id, 'professor_id', 1);
   const meus: Prisma.apoio_presencialWhereInput = isGestao(auth.role)
     ? {}
@@ -110,8 +118,13 @@ export async function listApoios(auth: SessionUser, f: { de?: string; ate?: stri
   const lista = await prisma.apoio_presencial.findMany({
     where: { AND: [meus, professor_id ? { professor_id } : {}], ...periodo('data', f.de, f.ate) },
     orderBy: [{ data: 'asc' }, { created_at: 'asc' }],
+    include: comNomes,
   });
-  return lista.map(toApoio);
+  return lista.map(({ professor, responsavel, ...a }) => ({
+    ...toApoio(a),
+    professor_nome: professor.profile?.nome ?? null,
+    responsavel_nome: responsavel.profile?.nome ?? null,
+  }));
 }
 
 async function lerApoio(body: unknown, parcial: boolean) {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { api, mensagemDeErro } from '@/lib/api';
 import { Plus, X, Pin, PinOff, Check, Clock, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
@@ -51,7 +51,6 @@ function fmtDate(d?: string | null) {
 }
 
 // usar `any` para contornar tipos desatualizados
-const db = supabase as any;
 
 // ── Formulário ─────────────────────────────────────────────────────
 function NovoForm({ turmas, disciplinas, onSave, onClose }: {
@@ -75,13 +74,17 @@ function NovoForm({ turmas, disciplinas, onSave, onClose }: {
     if (!titulo.trim()) { toast({ title: 'Título obrigatório', variant: 'destructive' }); return; }
     if (!userId) { toast({ title: 'Você precisa estar logado', variant: 'destructive' }); return; }
     setSaving(true);
-    const { error } = await db.from('lembretes').insert({
-      titulo: titulo.trim(), descricao: descricao || null, data: data || null,
-      prioridade, cor, turma_id: turmaId || null, disciplina_id: discId || null,
-      user_id: userId,
-    });
+    try {
+      await api.post('/lembretes', {
+        titulo: titulo.trim(), descricao: descricao || null, data: data || null,
+        prioridade, cor, turma_id: turmaId || null, disciplina_id: discId || null,
+      });
+    } catch (err) {
+      setSaving(false);
+      toast({ title: 'Erro ao salvar', description: mensagemDeErro(err), variant: 'destructive' });
+      return;
+    }
     setSaving(false);
-    if (error) { toast({ title: 'Erro ao salvar', description: error.message, variant: 'destructive' }); return; }
     toast({ title: '📌 Lembrete criado!' });
     onSave(); onClose();
   };
@@ -171,11 +174,20 @@ function LembreteCard({ item, turmas, disciplinas, onRefresh }: {
   const atrasado = isPast(item.data) && !item.concluido;
 
   const update = async (patch: Partial<Lembrete>) => {
-    await db.from('lembretes').update(patch).eq('id', item.id);
+    try {
+      await api.patch(`/lembretes/${item.id}`, patch);
+    } catch (err) {
+      toast({ title: 'Erro ao salvar', description: mensagemDeErro(err), variant: 'destructive' });
+    }
     onRefresh();
   };
   const remove = async () => {
-    await db.from('lembretes').delete().eq('id', item.id);
+    try {
+      await api.delete(`/lembretes/${item.id}`);
+    } catch (err) {
+      toast({ title: 'Erro ao remover', description: mensagemDeErro(err), variant: 'destructive' });
+      return;
+    }
     toast({ title: 'Lembrete removido' });
     onRefresh();
   };
@@ -244,14 +256,15 @@ export function PostItBoard() {
   const [loading, setLoading]       = useState(true);
 
   const load = async () => {
-    const [{ data: l }, { data: t }, { data: d }] = await Promise.all([
-      db.from('lembretes').select('*').order('fixado', { ascending: false }).order('created_at', { ascending: false }),
-      supabase.from('turmas').select('id, nome'),
-      supabase.from('disciplinas').select('id, nome'),
+    // Só os próprios lembretes, fixados primeiro.
+    const [l, t, d] = await Promise.all([
+      api.get<typeof items>('/lembretes').catch(() => []),
+      api.get<typeof turmas>('/turmas').catch(() => []),
+      api.get<Disciplina[]>('/disciplinas').catch(() => []),
     ]);
-    setItems(l || []);
-    setTurmas(t || []);
-    setDiscs(d || []);
+    setItems(l);
+    setTurmas(t);
+    setDiscs(d);
     setLoading(false);
   };
 

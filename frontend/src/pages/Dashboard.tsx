@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { api, buscarEmLotes, type LinhaSolta } from '@/lib/api';
 import { Link } from 'react-router-dom';
 import {
   School, GraduationCap, BookOpen, Laptop,
@@ -43,12 +43,11 @@ function ProvaPaulistaCard() {
   const [data, setData] = useState<{ media: number; alunos: number; abaixo: number; bimestres: { bimestre: string; media: number | null }[] } | null>(null);
   useEffect(() => {
     (async () => {
-      const { data: tipos } = await (supabase as any).from('tipos_avaliacao')
-        .select('id, bimestre').eq('categoria', 'prova_paulista');
-      if (!tipos || tipos.length === 0) { setData({ media: 0, alunos: 0, abaixo: 0, bimestres: [] }); return; }
+      const tipos = (await api.get<LinhaSolta[]>('/tipos-avaliacao').catch(() => [])).filter(t => t.categoria === 'prova_paulista');
+      if (tipos.length === 0) { setData({ media: 0, alunos: 0, abaixo: 0, bimestres: [] }); return; }
       const ids = tipos.map((t: any) => t.id);
-      const { data: ns } = await supabase.from('notas').select('aluno_id, nota, tipo_avaliacao_id, bimestre').in('tipo_avaliacao_id', ids);
-      const valid = (ns || []).filter((n: any) => n.nota != null);
+      const ns = await buscarEmLotes(ids, lote => api.get<LinhaSolta[]>('/notas', { tipo_avaliacao_id: lote })).catch(() => []);
+      const valid = ns.filter((n: any) => n.nota != null);
       const media = valid.length ? valid.reduce((s: number, n: any) => s + Number(n.nota), 0) / valid.length : 0;
       // por aluno
       const porAluno = new Map<string, number[]>();
@@ -135,27 +134,24 @@ export default function Dashboard() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [
-      { count: cTurmas }, { count: cAlunos }, { count: cPlanos }, { count: cOcorrencias },
-      { data: turmasData }, { data: disciplinasData },
-    ] = await Promise.all([
-      supabase.from('turmas').select('*', { count: 'exact', head: true }),
-      supabase.from('alunos').select('*', { count: 'exact', head: true }).eq('ativo', true),
-      supabase.from('planos_aula').select('*', { count: 'exact', head: true }),
-      supabase.from('ocorrencias_notebook').select('*', { count: 'exact', head: true }),
-      supabase.from('turmas').select('id, nome').order('nome'),
-      supabase.from('disciplinas').select('id, nome').order('nome'),
+    const vazio = () => [] as LinhaSolta[];
+    const [turmasData, alunosData, planosData, ocorrenciasData, disciplinasData, notasData] = await Promise.all([
+      api.get<Turma[]>('/turmas').catch(() => [] as Turma[]),
+      api.get<LinhaSolta[]>('/alunos', { ativo: true }).catch(vazio),
+      api.get<LinhaSolta[]>('/planos-aula').catch(vazio),
+      api.get<LinhaSolta[]>('/ocorrencias-notebook').catch(vazio),
+      api.get<Disciplina[]>('/disciplinas').catch(() => [] as Disciplina[]),
+      api.get<LinhaSolta[]>('/notas', { bimestre: fBimestre ? Number(fBimestre) : undefined }).catch(vazio),
     ]);
-    setTurmas(turmasData || []);
-    setDisciplinas(disciplinasData || []);
+    const cTurmas = turmasData.length, cAlunos = alunosData.length, cPlanos = planosData.length, cOcorrencias = ocorrenciasData.length;
+    setTurmas(turmasData);
+    setDisciplinas(disciplinasData);
 
-    let notasQ = supabase
-      .from('notas')
-      .select('nota, bimestre, aluno_id, tipo_avaliacao_id, alunos!inner(nome, turma_id, turmas(nome)), tipos_avaliacao(nome, turma_id, disciplina_id)');
-    if (fBimestre) notasQ = notasQ.eq('bimestre', Number(fBimestre));
-    if (fTurma) notasQ = notasQ.eq('alunos.turma_id', fTurma);
-    const { data: notasData } = await notasQ;
-    const notas = (notasData || []) as any[];
+    // Cada nota com o aluno (nome e turma), como a busca antiga fazia.
+    const alunoPorId = new Map(alunosData.map(a => [a.id, a]));
+    const notas = notasData
+      .map((n): LinhaSolta => ({ ...n, alunos: alunoPorId.get(n.aluno_id) }))
+      .filter(n => n.alunos && (!fTurma || n.alunos.turma_id === fTurma));
 
     const notasFilt = fDisciplina
       ? notas.filter(n => n.tipos_avaliacao?.disciplina_id === fDisciplina)
@@ -243,15 +239,10 @@ export default function Dashboard() {
     setDadosAlunos(sorted);
     setAlunosBaixo(alunosList.filter(a => a.media < 5).slice(0, 6));
 
-    let planosQ = supabase
-      .from('planos_aula')
-      .select('*, turmas(nome), disciplinas(nome)')
-      .gte('data_aula', new Date().toISOString().split('T')[0])
-      .order('data_aula', { ascending: true })
-      .limit(5);
-    if (fTurma) planosQ = planosQ.eq('turma_id', fTurma);
-    const { data: planosData } = await planosQ;
-    setProximosPlanos(planosData || []);
+    const proximos = await api.get<LinhaSolta[]>('/planos-aula', {
+      de: new Date().toISOString().split('T')[0], limite: 5, turma_id: fTurma || undefined,
+    }).catch(vazio);
+    setProximosPlanos(proximos);
 
     setLoading(false);
   }, [fTurma, fDisciplina, fBimestre]);

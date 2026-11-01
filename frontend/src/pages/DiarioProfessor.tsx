@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { api, mensagemDeErro } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/hooks/use-permissions';
 import { Button } from '@/components/ui/button';
@@ -19,7 +19,6 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid, Legend,
 } from 'recharts';
 
-const sb = supabase as any;
 
 type Turma = { id: string; nome: string; serie: string | null };
 type Disciplina = { id: string; nome: string; cor: string | null };
@@ -70,34 +69,28 @@ export default function DiarioProfessor() {
 
   useEffect(() => {
     (async () => {
-      const [{ data: t }, { data: d }] = await Promise.all([
-        sb.from('turmas').select('id,nome,serie').order('nome'),
-        sb.from('disciplinas').select('id,nome,cor').order('nome'),
+      const [t, d] = await Promise.all([
+        api.get<typeof turmas>('/turmas').catch(() => []),
+        api.get<typeof disciplinas>('/disciplinas').catch(() => []),
       ]);
-      setTurmas(t || []);
-      setDisciplinas(d || []);
+      setTurmas(t);
+      setDisciplinas(d);
     })();
   }, []);
 
   useEffect(() => {
     if (!turmaId) { setAlunos([]); return; }
     (async () => {
-      const { data } = await sb.from('alunos')
-        .select('id,nome,numero_chamada,turma_id,ativo')
-        .eq('turma_id', turmaId).eq('ativo', true)
-        .order('numero_chamada', { ascending: true, nullsFirst: false });
-      setAlunos(data || []);
+      setAlunos(await api.get<Aluno[]>('/alunos', { turma_id: turmaId, ativo: true, ordem: 'numero_chamada' }).catch(() => []));
     })();
   }, [turmaId]);
 
   const carregarAtividades = async () => {
     if (!turmaId) return;
-    let q = sb.from('diario_atividades').select('*')
-      .eq('turma_id', turmaId).eq('bimestre', bimestre)
-      .order('ordem', { ascending: true }).order('created_at', { ascending: true });
-    if (disciplinaId) q = q.eq('disciplina_id', disciplinaId);
-    const { data } = await q;
-    setAtividades((data as Atividade[]) || []);
+    // Já vêm na ordem das colunas.
+    setAtividades(await api.get<Atividade[]>('/diario/atividades', {
+      turma_id: turmaId, bimestre, disciplina_id: disciplinaId || undefined,
+    }).catch(() => []));
   };
 
   useEffect(() => { carregarAtividades(); }, [turmaId, disciplinaId, bimestre]);
@@ -105,21 +98,19 @@ export default function DiarioProfessor() {
   useEffect(() => {
     if (!atividades.length) { setLancamentos([]); return; }
     (async () => {
-      const ids = atividades.map(a => a.id);
-      const { data } = await sb.from('diario_lancamentos').select('*').in('atividade_id', ids);
-      setLancamentos((data as Lancamento[]) || []);
+      const ids = atividades.map(a => a.id).join(',');
+      setLancamentos(await api.get<Lancamento[]>('/diario/lancamentos', { atividade_id: ids }).catch(() => []));
     })();
   }, [atividades]);
 
   useEffect(() => {
     if (!turmaId) return;
     (async () => {
-      let q = sb.from('diario_observacoes_aluno').select('aluno_id,observacao')
-        .eq('turma_id', turmaId).eq('bimestre', bimestre);
-      if (disciplinaId) q = q.eq('disciplina_id', disciplinaId);
-      const { data } = await q;
+      const data = await api.get<{ aluno_id: string; observacao: string }[]>('/diario/observacoes', {
+        turma_id: turmaId, bimestre, disciplina_id: disciplinaId || undefined,
+      }).catch(() => []);
       const map: Record<string, string> = {};
-      (data || []).forEach((o: any) => { map[o.aluno_id] = o.observacao; });
+      data.forEach(o => { map[o.aluno_id] = o.observacao; });
       setObsAluno(map);
     })();
   }, [turmaId, disciplinaId, bimestre]);
@@ -136,19 +127,18 @@ export default function DiarioProfessor() {
 
   async function salvarAtividade() {
     if (!novaAtiv.nome || !turmaId) return;
+    try {
     if (editandoAtiv) {
-      const { error } = await sb.from('diario_atividades').update({
+      await api.patch(`/diario/atividades/${editandoAtiv.id}`, {
         nome: novaAtiv.nome,
         tipo: novaAtiv.tipo || 'nota',
         data: novaAtiv.data || null,
         peso: novaAtiv.peso ?? 1,
         observacao: novaAtiv.observacao || null,
         categoria: novaAtiv.categoria || null,
-      }).eq('id', editandoAtiv.id);
-      if (error) return toast({ title: 'Erro', description: error.message, variant: 'destructive' });
+      });
     } else {
       const payload = {
-        user_id: user?.id,
         turma_id: turmaId,
         disciplina_id: disciplinaId || null,
         bimestre,
@@ -160,8 +150,10 @@ export default function DiarioProfessor() {
         categoria: novaAtiv.categoria || null,
         ordem: atividades.length,
       };
-      const { error } = await sb.from('diario_atividades').insert(payload);
-      if (error) return toast({ title: 'Erro', description: error.message, variant: 'destructive' });
+      await api.post('/diario/atividades', payload);
+    }
+    } catch (err) {
+      return toast({ title: 'Erro', description: mensagemDeErro(err), variant: 'destructive' });
     }
     setDlgAtividade(false);
     setEditandoAtiv(null);
@@ -180,40 +172,39 @@ export default function DiarioProfessor() {
 
   async function removerAtividade(id: string, nome: string) {
     if (!confirm(`Excluir a atividade "${nome}" e todos os lançamentos vinculados?\n\nEsta ação não pode ser desfeita.`)) return;
-    await sb.from('diario_atividades').delete().eq('id', id);
+    try {
+      await api.delete(`/diario/atividades/${id}`);
+    } catch (err) {
+      toast({ title: 'Erro ao excluir', description: mensagemDeErro(err), variant: 'destructive' });
+    }
     carregarAtividades();
   }
 
-  async function salvarCelula(atividade_id: string, aluno_id: string, valor: string) {
-    const key = `${atividade_id}:${aluno_id}`;
-    const existente = lancMap[key];
-    if (existente) {
-      if ((existente.valor ?? '') === valor) return;
-      const { data } = await sb.from('diario_lancamentos')
-        .update({ valor }).eq('id', existente.id).select().single();
-      if (data) setLancamentos(prev => prev.map(l => l.id === data.id ? data : l));
-    } else {
-      const { data } = await sb.from('diario_lancamentos')
-        .insert({ user_id: user?.id, atividade_id, aluno_id, valor })
-        .select().single();
-      if (data) setLancamentos(prev => [...prev, data]);
+  /** Grava várias células num pedido só (tudo ou nada). Célula vazia apaga o lançamento. */
+  async function salvarCelulas(celulas: { atividade_id: string; aluno_id: string; valor: string }[]) {
+    const mudaram = celulas.filter(c => (lancMap[`${c.atividade_id}:${c.aluno_id}`]?.valor ?? '') !== c.valor);
+    if (!mudaram.length) return;
+    try {
+      const { salvos } = await api.put<{ salvos: Lancamento[] }>('/diario/lancamentos', { lancamentos: mudaram });
+      const chave = (l: { atividade_id: string; aluno_id: string }) => `${l.atividade_id}:${l.aluno_id}`;
+      const tocadas = new Set(mudaram.map(chave));
+      setLancamentos(prev => [...prev.filter(l => !tocadas.has(chave(l))), ...salvos]);
+    } catch (err) {
+      toast({ title: 'Não foi possível salvar', description: mensagemDeErro(err), variant: 'destructive' });
     }
   }
 
+  const salvarCelula = (atividade_id: string, aluno_id: string, valor: string) =>
+    salvarCelulas([{ atividade_id, aluno_id, valor }]);
+
   async function salvarObsAluno(aluno_id: string, texto: string) {
-    const existente = obsAluno[aluno_id];
-    if (existente) {
-      const { data: rows } = await sb.from('diario_observacoes_aluno').select('id')
-        .eq('aluno_id', aluno_id).eq('turma_id', turmaId).eq('bimestre', bimestre)
-        .eq('user_id', user?.id).maybeSingle();
-      if (rows?.id) {
-        await sb.from('diario_observacoes_aluno').update({ observacao: texto }).eq('id', rows.id);
-      }
-    } else {
-      await sb.from('diario_observacoes_aluno').insert({
-        user_id: user?.id, aluno_id, turma_id: turmaId,
-        disciplina_id: disciplinaId || null, bimestre, observacao: texto,
+    try {
+      // Grava ou corrige a observação; vazia apaga.
+      await api.put('/diario/observacoes', {
+        aluno_id, turma_id: turmaId, disciplina_id: disciplinaId || null, bimestre, observacao: texto,
       });
+    } catch (err) {
+      return toast({ title: 'Observação não salva', description: mensagemDeErro(err), variant: 'destructive' });
     }
     setObsAluno(prev => ({ ...prev, [aluno_id]: texto }));
   }
@@ -224,14 +215,16 @@ export default function DiarioProfessor() {
     if (!text.includes('\t') && !text.includes('\n')) return;
     e.preventDefault();
     const linhas = text.replace(/\r/g, '').split('\n').filter(l => l.length);
+    const celulas: { atividade_id: string; aluno_id: string; valor: string }[] = [];
     linhas.forEach((linha, i) => {
       const cols = linha.split('\t');
       cols.forEach((val, j) => {
         const ativ = atividades[startAtivIdx + j];
         const aluno = alunosFiltrados[startAlunoIdx + i];
-        if (ativ && aluno) salvarCelula(ativ.id, aluno.id, val.trim());
+        if (ativ && aluno) celulas.push({ atividade_id: ativ.id, aluno_id: aluno.id, valor: val.trim() });
       });
     });
+    salvarCelulas(celulas);
   }
 
   function statsAluno(alunoId: string) {
@@ -419,6 +412,9 @@ export default function DiarioProfessor() {
                         return (
                           <td key={ativ.id} className="border-l p-0">
                             <input
+                              // Refaz a célula quando o valor salvo chega (os lançamentos carregam depois das
+                              // atividades); senão ela ficaria vazia e, ao sair dela, apagaria o lançamento.
+                              key={l?.valor ?? ''}
                               type="text"
                               defaultValue={l?.valor ?? ''}
                               disabled={!canEdit}

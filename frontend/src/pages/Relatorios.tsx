@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { api, type LinhaSolta } from '@/lib/api';
 import { BarChart3, Download, Users, TrendingUp, TrendingDown, BookOpen } from 'lucide-react';
 import { PageHeader, FilterBar, TableContainer, BadgeSituacao, LoadingSpinner } from '@/components/ui-escola';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -21,19 +21,25 @@ export default function Relatorios() {
   useEffect(() => { loadRelatorio(); }, [filterTurma, filterDisciplina, filterBimestre]);
 
   async function loadFilters() {
-    const [{ data: t }, { data: d }] = await Promise.all([
-      supabase.from('turmas').select('id, nome').order('nome'),
-      supabase.from('disciplinas').select('id, nome').order('nome'),
+    const [t, d] = await Promise.all([
+      api.get<typeof turmas>('/turmas').catch(() => []),
+      api.get<typeof disciplinas>('/disciplinas').catch(() => []),
     ]);
-    setTurmas(t || []);
-    setDisciplinas(d || []);
+    setTurmas(t);
+    setDisciplinas(d);
   }
 
   async function loadRelatorio() {
     setLoading(true);
-    let query = supabase.from('alunos').select('id, nome, numero_chamada, turmas(nome), notas(nota, bimestre, tipos_avaliacao(nome, peso, bimestre, disciplina_id))').eq('ativo', true);
-    if (filterTurma !== 'all') query = query.eq('turma_id', filterTurma);
-    const { data: alunosData } = await query.order('numero_chamada');
+    const turma_id = filterTurma !== 'all' ? filterTurma : undefined;
+    // Alunos (com a turma) e as notas deles (com a avaliação), juntados aqui como a busca antiga fazia.
+    const [alunosLista, notas] = await Promise.all([
+      api.get<LinhaSolta[]>('/alunos', { ativo: true, turma_id, ordem: 'numero_chamada' }).catch(() => []),
+      api.get<LinhaSolta[]>('/notas', { turma_id }).catch(() => []),
+    ]);
+    const notasPorAluno = new Map<string, LinhaSolta[]>();
+    notas.forEach(n => { notasPorAluno.set(n.aluno_id, [...(notasPorAluno.get(n.aluno_id) ?? []), n]); });
+    const alunosData = alunosLista.map(a => ({ ...a, notas: notasPorAluno.get(a.id) ?? [] }));
 
     const result = (alunosData || []).map((aluno: any) => {
       let notasFiltradas = (aluno.notas || []);

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { supabase } from '@/lib/supabase';
+import { api } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 
 export type BlocoHorario = {
@@ -59,11 +59,8 @@ export type ApoioPresencial = {
 export function useGradeHorario() {
   const [grade, setGrade] = useState<BlocoHorario[]>([]);
   useEffect(() => {
-    supabase
-      .from('horario_grade')
-      .select('*')
-      .order('ordem')
-      .then(({ data }) => setGrade((data as BlocoHorario[]) || []));
+    // Já vem em ordem.
+    api.get<BlocoHorario[]>('/horario-grade').then(setGrade, () => setGrade([]));
   }, []);
   return grade;
 }
@@ -79,16 +76,17 @@ export function useAgenda() {
   const refetch = useCallback(async () => {
     if (!user) return;
     setLoading(true);
+    // A própria agenda; os eventos da escola em ordem de início; o apoio presencial (o professor vê só os seus).
     const [r, e, ev, ap] = await Promise.all([
-      supabase.from('agenda_professor').select('*').eq('user_id', user.id),
-      supabase.from('agenda_excecoes').select('*').eq('user_id', user.id),
-      supabase.from('agenda_escola_eventos').select('*').order('data_inicio'),
-      supabase.from('apoio_presencial').select('*').order('data'),
+      api.get<RotinaItem[]>('/agenda/rotina').catch(() => []),
+      api.get<ExcecaoItem[]>('/agenda/excecoes').catch(() => []),
+      api.get<EventoEscola[]>('/eventos-escola').catch(() => []),
+      api.get<ApoioPresencial[]>('/apoio-presencial').then(l => [...l].sort((a, b) => a.data.localeCompare(b.data))).catch(() => []),
     ]);
-    setRotina((r.data as RotinaItem[]) || []);
-    setExcecoes((e.data as ExcecaoItem[]) || []);
-    setEventos((ev.data as EventoEscola[]) || []);
-    setApoios((ap.data as ApoioPresencial[]) || []);
+    setRotina(r);
+    setExcecoes(e);
+    setEventos(ev);
+    setApoios(ap);
     setLoading(false);
   }, [user]);
 

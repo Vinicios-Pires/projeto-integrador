@@ -113,7 +113,9 @@ async function main() {
     check(codigo(await apoio({ data: '2099-03-11', professor_id: profA.id, responsavel_id: coord.id, horario_grade_id: INEXISTENTE })) === 'HORARIO_INVALIDO', 'Horário inexistente → horário inválido');
     check((await apoio({ data: '2099-03-11', professor_id: profA.id, responsavel_id: coord.id }, tA)).status === 403, 'Professor não marca apoio');
     const periodo = '?de=2099-01-01&ate=2099-12-31';
-    check((await call('GET', `/apoio-presencial${periodo}`, { token: tA })).json.length === 1, 'Professor A vê só o apoio dele');
+    const doA = (await call('GET', `/apoio-presencial${periodo}`, { token: tA })).json;
+    check(doA.length === 1, 'Professor A vê só o apoio dele');
+    check(doA[0]?.professor_nome === 'Teste profa' && doA[0]?.responsavel_nome === 'Teste coord', 'Com os nomes do professor e do responsável');
     check((await call('GET', `/apoio-presencial${periodo}`, { token: tB })).json.length === 1, 'Professor B vê só o dele');
     check((await call('GET', `/apoio-presencial${periodo}`, { token: tDirecao })).json.length === 2, 'Gestão vê todos');
     check((await call('GET', `/apoio-presencial${periodo}&professor_id=${profA.id}`, { token: tCoord })).json.length === 1, 'Gestão filtra por professor');

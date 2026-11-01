@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { api } from '@/lib/api';
 import {
   Building2, Users, GraduationCap, BookOpen, ClipboardList,
   CheckCircle, Clock, Laptop, Filter, RefreshCw, BarChart3,
@@ -57,18 +57,15 @@ export default function GestaoDashboard() {
 
   useEffect(() => {
     (async () => {
-      const [profRes, rolesRes, turmasRes, discRes] = await Promise.all([
-        supabase.from('profiles').select('id, nome, email'),
-        supabase.from('user_roles').select('user_id, role'),
-        supabase.from('turmas').select('id, nome').order('nome'),
-        supabase.from('disciplinas').select('id, nome, user_id'),
+      // A lista de usuários já traz o papel de cada um.
+      const [usuarios, turmasRes, discRes] = await Promise.all([
+        api.get<{ id: string; nome: string | null; email: string | null; role: string | null }[]>('/users').catch(() => []),
+        api.get<typeof turmas>('/turmas').catch(() => []),
+        api.get<typeof disciplinas>('/disciplinas').catch(() => []),
       ]);
-      const profsIds = new Set(
-        (rolesRes.data || []).filter(r => r.role === 'professor').map(r => r.user_id)
-      );
-      setProfessores((profRes.data || []).filter(p => profsIds.has(p.id)));
-      setTurmas(turmasRes.data || []);
-      setDisciplinas(discRes.data || []);
+      setProfessores(usuarios.filter(u => u.role === 'professor'));
+      setTurmas(turmasRes);
+      setDisciplinas(discRes);
     })();
   }, []);
 
@@ -76,15 +73,12 @@ export default function GestaoDashboard() {
     setLoading(true);
     try {
       // Notas com filtros
-      let qNotas = supabase.from('notas').select('nota, aluno_id, user_id, bimestre, tipo_avaliacao_id');
-      if (fProfessor) qNotas = qNotas.eq('user_id', fProfessor);
-      if (fBimestre) qNotas = qNotas.eq('bimestre', Number(fBimestre));
-      const { data: notas = [] } = await qNotas;
+      const notas = (await api.get<{ nota: number | null; aluno_id: string; user_id: string; bimestre: number; tipo_avaliacao_id: string }[]>(
+        '/notas', { bimestre: fBimestre ? Number(fBimestre) : undefined },
+      )).filter(n => !fProfessor || n.user_id === fProfessor);
 
       // Tipos de avaliação para filtrar por disciplina/turma
-      const { data: tipos = [] } = await supabase
-        .from('tipos_avaliacao')
-        .select('id, disciplina_id, turma_id, peso');
+      const tipos = await api.get<{ id: string; disciplina_id: string; turma_id: string; peso: number }[]>('/tipos-avaliacao');
       const tipoMap = new Map(tipos.map(t => [t.id, t]));
 
       // Filtra notas por turma/disciplina via tipo_avaliacao
@@ -97,9 +91,8 @@ export default function GestaoDashboard() {
       });
 
       // Alunos
-      let qAlunos = supabase.from('alunos').select('id, turma_id', { count: 'exact' }).eq('ativo', true);
-      if (fTurma) qAlunos = qAlunos.eq('turma_id', fTurma);
-      const { data: alunos = [], count: alunosCount } = await qAlunos;
+      const alunos = await api.get<{ id: string; turma_id: string | null }[]>('/alunos', { ativo: true, turma_id: fTurma || undefined });
+      const alunosCount = alunos.length;
 
       // Médias por aluno (média ponderada pelo peso do tipo)
       const porAluno = new Map<string, { soma: number; pesos: number }>();
@@ -167,20 +160,16 @@ export default function GestaoDashboard() {
         .slice(0, 10);
 
       // Planos
-      let qPlanos = supabase.from('planos_aula').select('status, user_id, turma_id, disciplina_id, bimestre');
-      if (fProfessor) qPlanos = qPlanos.eq('user_id', fProfessor);
-      if (fTurma) qPlanos = qPlanos.eq('turma_id', fTurma);
-      if (fDisciplina) qPlanos = qPlanos.eq('disciplina_id', fDisciplina);
-      if (fBimestre) qPlanos = qPlanos.eq('bimestre', Number(fBimestre));
-      const { data: planos = [] } = await qPlanos;
+      const planos = await api.get<{ status: string }[]>('/planos-aula', {
+        user_id: fProfessor || undefined, turma_id: fTurma || undefined,
+        disciplina_id: fDisciplina || undefined, bimestre: fBimestre ? Number(fBimestre) : undefined,
+      });
       const planosAprovados = (planos || []).filter(p => p.status === 'aprovado').length;
       const planosPendentes = (planos || []).filter(p => p.status !== 'aprovado').length;
 
       // Ocorrências
-      let qOcc = supabase.from('ocorrencias_notebook').select('id', { count: 'exact', head: true });
-      if (fProfessor) qOcc = qOcc.eq('user_id', fProfessor);
-      if (fTurma) qOcc = qOcc.eq('turma_id', fTurma);
-      const { count: occCount } = await qOcc;
+      const occCount = (await api.get<{ user_id: string }[]>('/ocorrencias-notebook', { turma_id: fTurma || undefined }))
+        .filter(o => !fProfessor || o.user_id === fProfessor).length;
 
       setKpi({
         professores: professores.length,
