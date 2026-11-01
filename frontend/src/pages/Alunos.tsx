@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { supabase } from '@/lib/supabase';
+import { api, mensagemDeErro } from '@/lib/api';
 import { Plus, Edit2, Trash2, Search, Upload, Download, X } from 'lucide-react';
 import { PageHeader, FilterBar, TableContainer, EmptyState, LoadingSpinner } from '@/components/ui-escola';
 import { Button } from '@/components/ui/button';
@@ -21,9 +21,11 @@ interface Aluno {
   turmas?: { nome: string; serie: string };
 }
 
+type Turma = { id: string; nome: string; serie: string };
+
 export default function Alunos() {
   const [alunos, setAlunos] = useState<Aluno[]>([]);
-  const [turmas, setTurmas] = useState<{ id: string; nome: string; serie: string }[]>([]);
+  const [turmas, setTurmas] = useState<Turma[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterTurma, setFilterTurma] = useState('all');
@@ -40,12 +42,17 @@ export default function Alunos() {
   useEffect(() => { loadData(); }, []);
 
   async function loadData() {
-    const [{ data: alunosData }, { data: turmasData }] = await Promise.all([
-      supabase.from('alunos').select('*, turmas(nome, serie)').order('turmas(nome)', { ascending: true }),
-      supabase.from('turmas').select('id, nome, serie').order('nome'),
-    ]);
-    setAlunos(alunosData as Aluno[] || []);
-    setTurmas(turmasData || []);
+    try {
+      // Alunos já vêm em ordem de turma (e número da chamada), com turmas: { nome, serie }.
+      const [alunosData, turmasData] = await Promise.all([
+        api.get<Aluno[]>('/alunos'),
+        api.get<Turma[]>('/turmas'),
+      ]);
+      setAlunos(alunosData);
+      setTurmas(turmasData);
+    } catch (err) {
+      toast({ title: 'Erro ao carregar alunos', description: mensagemDeErro(err), variant: 'destructive' });
+    }
     setLoading(false);
   }
 
@@ -82,10 +89,13 @@ export default function Alunos() {
         turmaId = existente.id; turmaSerie = existente.serie;
       } else {
         const novaSerie = inferirSerie(nomeTurma);
-        const { data: novaTurma, error: errTurma } = await supabase
-          .from('turmas').insert({ nome: nomeTurma, serie: novaSerie, turno: 'Manhã' })
-          .select('id, nome, serie').single();
-        if (errTurma || !novaTurma) { setSaving(false); return toast({ title: 'Erro ao criar turma', description: errTurma?.message, variant: 'destructive' }); }
+        let novaTurma: Turma;
+        try {
+          novaTurma = await api.post<Turma>('/turmas', { nome: nomeTurma, serie: novaSerie, turno: 'Manhã' });
+        } catch (err) {
+          setSaving(false);
+          return toast({ title: 'Erro ao criar turma', description: mensagemDeErro(err), variant: 'destructive' });
+        }
         turmaId = novaTurma.id; turmaSerie = novaTurma.serie;
         setTurmas(prev => [...prev, novaTurma]);
       }
@@ -107,22 +117,29 @@ export default function Alunos() {
       ativo: form.ativo,
     };
 
-    const { error } = editingAluno
-      ? await supabase.from('alunos').update(payload).eq('id', editingAluno.id)
-      : await supabase.from('alunos').insert(payload);
-
+    try {
+      if (editingAluno) await api.patch(`/alunos/${editingAluno.id}`, payload);
+      else await api.post('/alunos', payload);
+    } catch (err) {
+      setSaving(false);
+      return toast({ title: 'Erro ao salvar', description: mensagemDeErro(err), variant: 'destructive' });
+    }
     setSaving(false);
-    if (error) return toast({ title: 'Erro ao salvar', description: error.message, variant: 'destructive' });
     toast({ title: editingAluno ? 'Aluno atualizado!' : 'Aluno cadastrado e ativo na turma!' });
     setDialogOpen(false);
     loadData();
   }
 
   async function remove(id: string) {
-    if (!confirm('Excluir este aluno?')) return;
-    await supabase.from('alunos').delete().eq('id', id);
-    toast({ title: 'Aluno excluído' });
-    loadData();
+    if (!confirm('Excluir este aluno? As notas e os registros dele saem junto.')) return;
+    try {
+      await api.delete(`/alunos/${id}`);
+      toast({ title: 'Aluno excluído' });
+      loadData();
+    } catch (err) {
+      // Só a gestão exclui; o professor pode inativar o aluno.
+      toast({ title: 'Não foi possível excluir', description: mensagemDeErro(err), variant: 'destructive' });
+    }
   }
 
   function downloadModelo() {
@@ -164,71 +181,33 @@ export default function Alunos() {
     const text = await file.text();
     const lines = text.trim().split('\n').slice(1);
 
-    // Carrega snapshot atual de turmas e alunos para evitar duplicação
-    const { data: turmasAtuais } = await supabase.from('turmas').select('id, nome, serie');
-    const { data: alunosAtuais } = await supabase.from('alunos').select('nome, turma_id');
-    const mapaTurmas = new Map<string, { id: string; serie: string }>();
-    (turmasAtuais || []).forEach(t => mapaTurmas.set(t.nome.toUpperCase().replace(/\s+/g, ''), { id: t.id, serie: t.serie }));
-
-    const erros: string[] = [];
-    const turmasCriadas: string[] = [];
-    const inserts: any[] = [];
-
+    // O backend normaliza a turma ("7A", "7º A"…), cria as que faltam e evita duplicados, tudo de uma vez.
+    const linhas: { numero_chamada?: number; nome: string; turma: string }[] = [];
+    const linhaDoArquivo: number[] = [];
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const cols = line.split(',').map(c => c.replace(/"/g, '').trim());
+      const cols = lines[i].split(',').map(c => c.replace(/"/g, '').trim());
       if (!cols[0] && !cols[1]) continue;
-
-      const numero = parseInt(cols[0]) || 0;
-      const nome = cols[1];
-      const serieTurmaRaw = cols[2];
-
-      if (!nome) { erros.push(`Linha ${i + 2}: nome vazio`); continue; }
-      const serieTurma = normalizarSerieTurma(serieTurmaRaw);
-      if (!serieTurma) { erros.push(`Linha ${i + 2}: formato de turma inválido "${serieTurmaRaw}" (use ex: 7°A)`); continue; }
-
-      // Verifica/cria turma
-      let turmaInfo = mapaTurmas.get(serieTurma.toUpperCase().replace(/\s+/g, ''));
-      if (!turmaInfo) {
-        const novaSerie = inferirSerie(serieTurma);
-        const { data: novaTurma, error: errTurma } = await supabase
-          .from('turmas')
-          .insert({ nome: serieTurma, serie: novaSerie, turno: 'Manhã' })
-          .select('id, nome, serie')
-          .single();
-        if (errTurma || !novaTurma) { erros.push(`Linha ${i + 2}: falha ao criar turma ${serieTurma}`); continue; }
-        turmaInfo = { id: novaTurma.id, serie: novaTurma.serie };
-        mapaTurmas.set(serieTurma.toUpperCase().replace(/\s+/g, ''), turmaInfo);
-        turmasCriadas.push(serieTurma);
-      }
-
-      // Evita duplicação (mesmo nome na mesma turma)
-      const duplicado = (alunosAtuais || []).some(
-        a => a.turma_id === turmaInfo!.id && a.nome.trim().toLowerCase() === nome.toLowerCase()
-      ) || inserts.some(x => x.turma_id === turmaInfo!.id && x.nome.toLowerCase() === nome.toLowerCase());
-      if (duplicado) { erros.push(`Linha ${i + 2}: aluno "${nome}" já existe em ${serieTurma}`); continue; }
-
-      inserts.push({
-        nome,
-        numero_chamada: numero,
-        serie: turmaInfo.serie,
-        turma_id: turmaInfo.id,
-        ativo: true,
-      });
+      const numero = parseInt(cols[0]);
+      linhas.push({ numero_chamada: numero > 0 ? numero : undefined, nome: cols[1] ?? '', turma: cols[2] ?? '' });
+      linhaDoArquivo.push(i + 2);
     }
 
-    if (inserts.length > 0) {
-      const { error } = await supabase.from('alunos').insert(inserts);
-      if (error) {
-        toast({ title: 'Erro ao importar', description: error.message, variant: 'destructive' });
-      } else {
-        const turmasMsg = turmasCriadas.length ? ` | Turmas criadas: ${turmasCriadas.join(', ')}` : '';
+    let erros: string[] = [];
+    try {
+      const res = await api.post<{ importados: number; turmas_criadas: string[]; erros: { linha: number; motivo: string }[] }>(
+        '/alunos/importar', { linhas },
+      );
+      erros = res.erros.map(e => `Linha ${linhaDoArquivo[e.linha - 1] ?? e.linha}: ${e.motivo}`);
+      if (res.importados > 0) {
+        const turmasMsg = res.turmas_criadas.length ? ` | Turmas criadas: ${res.turmas_criadas.join(', ')}` : '';
         const errosMsg = erros.length ? ` | ${erros.length} linha(s) ignorada(s)` : '';
-        toast({ title: `${inserts.length} alunos importados!`, description: turmasMsg + errosMsg });
+        toast({ title: `${res.importados} alunos importados!`, description: turmasMsg + errosMsg });
+        loadData();
+      } else {
+        toast({ title: 'Nenhum aluno importado', description: erros.slice(0, 3).join(' • '), variant: 'destructive' });
       }
-      loadData();
-    } else {
-      toast({ title: 'Nenhum aluno importado', description: erros.slice(0, 3).join(' • '), variant: 'destructive' });
+    } catch (err) {
+      toast({ title: 'Erro ao importar', description: mensagemDeErro(err), variant: 'destructive' });
     }
     if (erros.length > 0) console.warn('Erros na importação:', erros);
     if (fileRef.current) fileRef.current.value = '';

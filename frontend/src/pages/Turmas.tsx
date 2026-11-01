@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { api, mensagemDeErro } from '@/lib/api';
+import { useAuth } from '@/contexts/AuthContext';
 import { Plus, Edit2, Trash2, Search, Users, BookOpen, X, Sparkles, UserPlus, Download } from 'lucide-react';
 import { PageHeader, FilterBar, EmptyState, LoadingSpinner } from '@/components/ui-escola';
 import { Button } from '@/components/ui/button';
@@ -70,28 +71,16 @@ export default function Turmas() {
   const [filtroSerieAluno, setFiltroSerieAluno] = useState('all');
   const [filtroTurmaAluno, setFiltroTurmaAluno] = useState('all');
   const [savingPerson, setSavingPerson] = useState(false);
-  const [userId, setUserId] = useState<string | null>(null);
-
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id || null));
-  }, []);
+  const userId = useAuth().user?.id ?? null;
 
   useEffect(() => { loadTurmas(); }, []);
 
   async function loadTurmas() {
-    const { data } = await supabase.from('turmas').select('*, alunos(count)').order('nome');
-    if (data) {
-      const lista: Turma[] = data.map((t: any) => ({ ...t, alunos_count: t.alunos?.[0]?.count || 0 }));
-      // Conta membros das personalizadas
-      const personIds = lista.filter(t => t.tipo === 'personalizada').map(t => t.id);
-      if (personIds.length) {
-        const { data: ms } = await (supabase as any).from('turma_membros')
-          .select('turma_id').in('turma_id', personIds);
-        const counts: Record<string, number> = {};
-        (ms || []).forEach((m: any) => { counts[m.turma_id] = (counts[m.turma_id] || 0) + 1; });
-        lista.forEach(t => { if (t.tipo === 'personalizada') t.membros_count = counts[t.id] || 0; });
-      }
-      setTurmas(lista);
+    try {
+      // Já vem em ordem de nome, com alunos_count e membros_count.
+      setTurmas(await api.get<Turma[]>('/turmas'));
+    } catch (err) {
+      toast({ title: 'Erro ao carregar turmas', description: mensagemDeErro(err), variant: 'destructive' });
     }
     setLoading(false);
   }
@@ -111,23 +100,32 @@ export default function Turmas() {
   async function save() {
     if (!form.nome || !form.serie) return toast({ title: 'Preencha nome e série', variant: 'destructive' });
     setSaving(true);
-    if (editingTurma) {
-      await supabase.from('turmas').update(form).eq('id', editingTurma.id);
-      toast({ title: 'Turma atualizada!' });
-    } else {
-      await supabase.from('turmas').insert(form);
-      toast({ title: 'Turma cadastrada!' });
+    try {
+      if (editingTurma) {
+        await api.patch(`/turmas/${editingTurma.id}`, form);
+        toast({ title: 'Turma atualizada!' });
+      } else {
+        await api.post('/turmas', form);
+        toast({ title: 'Turma cadastrada!' });
+      }
+      setDialogOpen(false);
+      loadTurmas();
+    } catch (err) {
+      toast({ title: 'Erro ao salvar a turma', description: mensagemDeErro(err), variant: 'destructive' });
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
-    setDialogOpen(false);
-    loadTurmas();
   }
 
   async function remove(id: string) {
-    if (!confirm('Excluir esta turma? Todos os alunos vinculados serão removidos.')) return;
-    await supabase.from('turmas').delete().eq('id', id);
-    toast({ title: 'Turma excluída' });
-    loadTurmas();
+    if (!confirm('Excluir esta turma? Só é possível excluir turmas sem alunos.')) return;
+    try {
+      await api.delete(`/turmas/${id}`);
+      toast({ title: 'Turma excluída' });
+      loadTurmas();
+    } catch (err) {
+      toast({ title: 'Não foi possível excluir', description: mensagemDeErro(err), variant: 'destructive' });
+    }
   }
 
   // ===== Formar turma personalizada =====
@@ -135,27 +133,25 @@ export default function Turmas() {
     setPersonEditing(t || null);
     setPersonForm({
       nome: t?.nome || '',
-      nivel: (t && getNivel(t.serie) in NIVEIS ? getNivel(t.serie) : 'Ensino Médio') as keyof typeof NIVEIS,
+      // A eletiva guarda o próprio nível como série ("Ensino Fundamental II").
+      nivel: (t && t.serie in NIVEIS ? t.serie : t && getNivel(t.serie) in NIVEIS ? getNivel(t.serie) : 'Ensino Médio') as keyof typeof NIVEIS,
       turno: t?.turno || 'Manhã',
       observacoes: t?.observacoes || '',
     });
     setBuscaAluno('');
     setFiltroSerieAluno('all');
     setFiltroTurmaAluno('all');
-    const { data } = await supabase
-      .from('alunos')
-      .select('id, nome, numero_chamada, serie, turma_id, turmas(nome, serie)')
-      .eq('ativo', true)
-      .order('nome');
-    setTodosAlunos((data as any) || []);
-    if (t) {
-      const { data: ms } = await (supabase as any).from('turma_membros')
-        .select('aluno_id').eq('turma_id', t.id);
-      setSelecionados(new Set((ms || []).map((m: any) => m.aluno_id)));
-    } else {
-      setSelecionados(new Set());
+    try {
+      const [alunos, membros] = await Promise.all([
+        api.get<AlunoListItem[]>('/alunos', { ativo: true, ordem: 'nome' }),
+        t ? api.get<{ aluno_id: string }[]>(`/turmas/${t.id}/membros`) : Promise.resolve([]),
+      ]);
+      setTodosAlunos(alunos);
+      setSelecionados(new Set(membros.map(m => m.aluno_id)));
+      setPersonDialogOpen(true);
+    } catch (err) {
+      toast({ title: 'Erro ao carregar alunos', description: mensagemDeErro(err), variant: 'destructive' });
     }
-    setPersonDialogOpen(true);
   }
 
   function toggleAluno(id: string) {
@@ -180,30 +176,17 @@ export default function Turmas() {
       observacoes: personForm.observacoes,
       tipo: 'personalizada',
     };
-    if (turmaId) {
-      await supabase.from('turmas').update(payload).eq('id', turmaId);
-    } else {
-      const { data, error } = await supabase.from('turmas').insert(payload).select('id').single();
-      if (error || !data) {
-        setSavingPerson(false);
-        return toast({ title: 'Erro ao criar turma', description: error?.message, variant: 'destructive' });
+    try {
+      if (turmaId) {
+        await api.patch(`/turmas/${turmaId}`, payload);
+      } else {
+        turmaId = (await api.post<{ id: string }>('/turmas', payload)).id;
       }
-      turmaId = data.id;
-    }
-    // Sincroniza membros
-    const { data: atuais } = await (supabase as any).from('turma_membros')
-      .select('aluno_id').eq('turma_id', turmaId);
-    const atuaisSet = new Set<string>((atuais || []).map((m: any) => m.aluno_id as string));
-    const aRemover = Array.from(atuaisSet).filter(id => !selecionados.has(id));
-    const aAdicionar = Array.from(selecionados).filter(id => !atuaisSet.has(id));
-    if (aRemover.length) {
-      await (supabase as any).from('turma_membros').delete()
-        .eq('turma_id', turmaId).in('aluno_id', aRemover);
-    }
-    if (aAdicionar.length) {
-      await (supabase as any).from('turma_membros').insert(
-        aAdicionar.map(aluno_id => ({ turma_id: turmaId, aluno_id, user_id: userId }))
-      );
+      // Substitui os membros pelos selecionados.
+      await api.put(`/turmas/${turmaId}/membros`, { aluno_ids: Array.from(selecionados) });
+    } catch (err) {
+      setSavingPerson(false);
+      return toast({ title: 'Erro ao salvar a turma', description: mensagemDeErro(err), variant: 'destructive' });
     }
     setSavingPerson(false);
     setPersonDialogOpen(false);
@@ -212,11 +195,10 @@ export default function Turmas() {
   }
 
   function exportarMembros(t: Turma) {
-    (supabase as any).from('turma_membros')
-      .select('alunos:aluno_id(nome, numero_chamada, turmas(nome, serie))')
-      .eq('turma_id', t.id)
-      .then((res: any) => {
-        const rows = (res.data || []).map((m: any) => m.alunos).filter(Boolean);
+    api.get<{ alunos: AlunoListItem | null }[]>(`/turmas/${t.id}/membros`)
+      .catch((err) => { toast({ title: 'Erro ao exportar', description: mensagemDeErro(err), variant: 'destructive' }); return []; })
+      .then((membros) => {
+        const rows = membros.map((m: any) => m.alunos).filter(Boolean);
         const csv = 'Nº,Nome,Turma Original,Série\n' + rows
           .sort((a: any, b: any) => a.nome.localeCompare(b.nome))
           .map((a: any) => `${a.numero_chamada || ''},"${a.nome}","${a.turmas?.nome || ''}","${a.turmas?.serie || ''}"`)

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { api, mensagemDeErro } from '@/lib/api';
 import { Palette, Plus, Edit2, Trash2, BookOpen, BarChart3, ClipboardList, FileText, Eye, Users, Check } from 'lucide-react';
 import { PageHeader, TableContainer } from '@/components/ui-escola';
 import { usePermissions } from '@/hooks/use-permissions';
@@ -55,16 +55,20 @@ export default function Materias() {
   useEffect(() => { load(); }, [userId]);
 
   async function load() {
-    const [{ data: disc }, { data: t }, vincRes] = await Promise.all([
-      supabase.from('disciplinas').select('*').order('nome'),
-      supabase.from('turmas').select('id, nome, serie').order('nome'),
-      userId
-        ? supabase.from('turma_disciplinas').select('disciplina_id, turma_id').eq('user_id', userId)
-        : Promise.resolve({ data: [] as any[] }),
-    ]);
-    setDisciplinas(disc || []);
-    setTurmas(t || []);
-    setVinculos(vincRes.data || []);
+    try {
+      const [disc, t, vinc] = await Promise.all([
+        api.get<typeof disciplinas>('/disciplinas'),
+        api.get<typeof turmas>('/turmas'),
+        userId
+          ? api.get<{ disciplina_id: string; turma_id: string }[]>('/turma-disciplinas', { user_id: userId })
+          : Promise.resolve([]),
+      ]);
+      setDisciplinas(disc);
+      setTurmas(t);
+      setVinculos(vinc);
+    } catch (err) {
+      toast({ title: 'Erro ao carregar matérias', description: mensagemDeErro(err), variant: 'destructive' });
+    }
   }
 
   function abrirVinculos(d: any) {
@@ -85,21 +89,11 @@ export default function Materias() {
 
   async function salvarVinculos() {
     if (!vincDisciplina || !userId) return;
-    const atuais = new Set(vinculos.filter(v => v.disciplina_id === vincDisciplina.id).map(v => v.turma_id));
-    const novas = vincSelecionadas;
-    const adicionar = Array.from(novas).filter(id => !atuais.has(id));
-    const remover = Array.from(atuais).filter(id => !novas.has(id));
-
-    if (adicionar.length) {
-      await supabase.from('turma_disciplinas').insert(
-        adicionar.map(turma_id => ({ turma_id, disciplina_id: vincDisciplina.id, user_id: userId }))
-      );
-    }
-    if (remover.length) {
-      await supabase.from('turma_disciplinas').delete()
-        .eq('disciplina_id', vincDisciplina.id)
-        .eq('user_id', userId)
-        .in('turma_id', remover);
+    try {
+      // Substitui as turmas da matéria pelas selecionadas.
+      await api.put(`/disciplinas/${vincDisciplina.id}/turmas`, { turma_ids: Array.from(vincSelecionadas) });
+    } catch (err) {
+      return toast({ title: 'Erro ao salvar vínculos', description: mensagemDeErro(err), variant: 'destructive' });
     }
     toast({ title: 'Vínculos atualizados!', description: `${vincDisciplina.nome} agora aparece apenas nas turmas selecionadas.` });
     setVincDialogOpen(false);
@@ -108,12 +102,16 @@ export default function Materias() {
 
   async function save() {
     if (!form.nome.trim() || !canEdit || !userId) return;
-    if (editing) {
-      await supabase.from('disciplinas').update({ nome: form.nome, cor: form.cor }).eq('id', editing.id);
-      toast({ title: 'Matéria atualizada!' });
-    } else {
-      await supabase.from('disciplinas').insert({ nome: form.nome, cor: form.cor, user_id: userId });
-      toast({ title: 'Matéria criada!' });
+    try {
+      if (editing) {
+        await api.patch(`/disciplinas/${editing.id}`, { nome: form.nome, cor: form.cor });
+        toast({ title: 'Matéria atualizada!' });
+      } else {
+        await api.post('/disciplinas', { nome: form.nome, cor: form.cor });
+        toast({ title: 'Matéria criada!' });
+      }
+    } catch (err) {
+      return toast({ title: 'Erro ao salvar a matéria', description: mensagemDeErro(err), variant: 'destructive' });
     }
     setDialogOpen(false);
     load();
@@ -122,7 +120,11 @@ export default function Materias() {
   async function remove(id: string) {
     if (!canEdit) return;
     if (!confirm('Excluir esta matéria? Isso pode afetar planos e notas vinculados.')) return;
-    await supabase.from('disciplinas').delete().eq('id', id);
+    try {
+      await api.delete(`/disciplinas/${id}`);
+    } catch (err) {
+      return toast({ title: 'Não foi possível excluir', description: mensagemDeErro(err), variant: 'destructive' });
+    }
     toast({ title: 'Matéria excluída' });
     load();
   }
