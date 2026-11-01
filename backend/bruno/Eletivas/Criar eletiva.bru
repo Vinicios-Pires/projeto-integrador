@@ -1,0 +1,44 @@
+meta {
+  name: Criar eletiva
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/turmas
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "nome": "Eletiva Robótica",
+    "serie": "Ensino Médio",
+    "tipo": "personalizada"
+  }
+}
+
+script:post-response {
+  // A eletiva também é uma turma: guarda o id em `turmaId`.
+  if (res.status === 201) {
+    bru.setEnvVar("turmaId", res.body.id);
+  }
+}
+
+tests {
+  test("eletiva criada", function () {
+    expect(res.status).to.equal(201);
+    expect(res.body.tipo).to.equal("personalizada");
+  });
+}
+
+docs {
+  Cria uma turma personalizada (eletiva): é o mesmo *Turmas > Criar turma*, com
+  `"tipo": "personalizada"`. O id fica salvo em `turmaId`.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400).
+}

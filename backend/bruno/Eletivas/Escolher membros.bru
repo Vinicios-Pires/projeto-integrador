@@ -1,0 +1,41 @@
+meta {
+  name: Escolher membros
+  type: http
+  seq: 2
+}
+
+put {
+  url: {{baseUrl}}/turmas/{{turmaId}}/membros
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  { "aluno_ids": ["{{alunoId}}"] }
+}
+
+tests {
+  test("membros definidos", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body).to.be.an("array");
+    expect(res.body[0].alunos.turmas).to.be.an("object");
+  });
+}
+
+docs {
+  Define **de uma vez** quem participa da eletiva de `turmaId`: a lista enviada substitui a
+  anterior, e `[]` esvazia. Usa o aluno de `alunoId` (rode *Alunos > Cadastrar aluno* numa
+  turma regular antes). Os alunos continuam na turma de origem.
+
+  Devolve os membros, cada um com `alunos: { id, nome, numero_chamada, serie, ativo, turma_id,
+  turmas: { nome, serie } }` (a turma de origem).
+
+  Quem pode: o **dono** da eletiva e o **admin**. Só vale para turma `personalizada`.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400), `ALUNO_INVALIDO` (400),
+  `TURMA_NAO_PERSONALIZADA` (400), `SEM_PERMISSAO` (403, gestão), `TURMA_NAO_ENCONTRADA` (404).
+}

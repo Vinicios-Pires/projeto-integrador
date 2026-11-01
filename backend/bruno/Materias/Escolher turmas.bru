@@ -1,0 +1,43 @@
+meta {
+  name: Escolher turmas
+  type: http
+  seq: 5
+}
+
+put {
+  url: {{baseUrl}}/disciplinas/{{disciplinaId}}/turmas
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  { "turma_ids": ["{{turmaId}}"] }
+}
+
+tests {
+  test("turmas definidas", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body).to.be.an("array");
+    expect(res.body[0].turmas).to.be.an("object");
+  });
+}
+
+docs {
+  Define **de uma vez** em quais turmas a matéria de `disciplinaId` aparece: a lista enviada
+  substitui a anterior, e `[]` tira a matéria de todas. Usa a turma de `turmaId`
+  (rode *Turmas > Criar turma* antes).
+
+  Só entram turmas que você enxerga (as suas; a gestão e o admin, todas). Os vínculos ficam
+  no nome do dono da matéria, mesmo quando o admin altera.
+
+  Devolve os vínculos da matéria, cada um com `turmas` e `disciplinas`.
+
+  Quem pode: o **dono** da matéria e o **admin**.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400), `TURMA_INVALIDA` (400),
+  `SEM_PERMISSAO` (403, gestão), `DISCIPLINA_NAO_ENCONTRADA` (404).
+}

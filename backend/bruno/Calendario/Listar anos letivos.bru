@@ -1,0 +1,29 @@
+meta {
+  name: Listar anos letivos
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{baseUrl}}/ano-letivo
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("anos devolvidos", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body).to.be.an("array");
+  });
+}
+
+docs {
+  Lista os anos letivos (início, fim e se está ativo), do mais recente para o mais antigo.
+  Datas no formato `AAAA-MM-DD`. **Qualquer usuário logado** pode ler.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401).
+}

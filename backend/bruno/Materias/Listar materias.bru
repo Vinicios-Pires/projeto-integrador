@@ -1,0 +1,29 @@
+meta {
+  name: Listar materias
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/disciplinas
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("lista devolvida", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body).to.be.an("array");
+  });
+}
+
+docs {
+  Lista as matérias em ordem de nome. O **professor vê só as próprias**; a **gestão e o admin
+  veem todas**.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401).
+}

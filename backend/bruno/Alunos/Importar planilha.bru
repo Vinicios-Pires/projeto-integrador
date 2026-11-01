@@ -1,0 +1,50 @@
+meta {
+  name: Importar planilha
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/alunos/importar
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "linhas": [
+      { "numero_chamada": 1, "nome": "Bruno Souza", "turma": "7°A" },
+      { "numero_chamada": 2, "nome": "Carla Lima", "turma": "7 A" },
+      { "numero_chamada": 1, "nome": "Davi Rocha", "turma": "8ºB" }
+    ]
+  }
+}
+
+tests {
+  test("importação processada", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body.importados).to.be.a("number");
+    expect(res.body.erros).to.be.an("array");
+  });
+}
+
+docs {
+  Importa a planilha da tela Alunos: uma linha por aluno, com `nome`, `turma` (ex.: `7°A`,
+  `7A`, `7º A`) e, se tiver, `numero_chamada`. Até 2000 linhas.
+
+  - Turmas que você ainda não tem são **criadas no seu nome** (turno Manhã) e voltam em `turmas_criadas`.
+  - Linhas com problema (nome vazio, turma em formato inválido, aluno já cadastrado) são **puladas**
+    e voltam em `erros`, com a posição da linha na lista (`linha`, começando em 1).
+  - O resto entra de uma vez: ou tudo, ou nada.
+
+  Resposta: `{ importados, turmas_criadas, erros: [{ linha, motivo }] }`.
+
+  **Atenção:** rodar este pedido cria turmas de verdade (`7°A`, `8°B`) no seu nome.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400, lista vazia ou grande demais),
+  `CORPO_GRANDE_DEMAIS` (413).
+}

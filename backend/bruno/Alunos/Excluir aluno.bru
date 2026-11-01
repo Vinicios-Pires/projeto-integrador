@@ -1,0 +1,31 @@
+meta {
+  name: Excluir aluno
+  type: http
+  seq: 6
+}
+
+delete {
+  url: {{baseUrl}}/alunos/{{alunoId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("aluno excluído", function () {
+    expect(res.status).to.equal(204);
+  });
+}
+
+docs {
+  Exclui o aluno de `alunoId`. **Só a gestão e o admin.** O professor, em vez de excluir,
+  inativa (*Editar aluno* com `"ativo": false`).
+
+  **Atenção:** as notas e registros do aluno são apagados junto.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `SEM_PERMISSAO` (403, professor),
+  `ALUNO_NAO_ENCONTRADO` (404).
+}

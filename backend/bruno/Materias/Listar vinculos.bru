@@ -1,0 +1,36 @@
+meta {
+  name: Listar vinculos
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{baseUrl}}/turma-disciplinas?disciplina_id={{disciplinaId}}
+  body: none
+  auth: bearer
+}
+
+params:query {
+  disciplina_id: {{disciplinaId}}
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("vínculos devolvidos", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body).to.be.an("array");
+  });
+}
+
+docs {
+  Lista os vínculos matéria ↔ turma, cada um com `turmas: { id, nome, serie, tipo }` e
+  `disciplinas: { id, nome, cor, user_id }`. O **professor vê os próprios**; a **gestão e o
+  admin veem os de todos**.
+
+  Filtros opcionais (aba *Params*): `turma_id`, `disciplina_id` e `user_id` (só os de um professor).
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400, filtro malformado).
+}

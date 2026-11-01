@@ -1,0 +1,33 @@
+meta {
+  name: Editar horario
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{baseUrl}}/horario-grade/{{horarioId}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  { "hora_fim": "18:40" }
+}
+
+tests {
+  test("faixa alterada", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body.hora_fim).to.equal("18:40:00");
+  });
+}
+
+docs {
+  Altera **só os campos enviados** da faixa de `horarioId`. **Só admin.**
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `SEM_PERMISSAO` (403), `DADOS_INVALIDOS` (400),
+  `HORARIO_NAO_ENCONTRADO` (404).
+}

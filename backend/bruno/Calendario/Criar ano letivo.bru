@@ -1,0 +1,42 @@
+meta {
+  name: Criar ano letivo
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/ano-letivo
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  { "ano": 2099, "data_inicio": "2099-02-01", "data_fim": "2099-12-15" }
+}
+
+script:post-response {
+  if (res.status === 201) {
+    bru.setEnvVar("anoLetivoId", res.body.id);
+  }
+}
+
+tests {
+  test("ano criado", function () {
+    expect(res.status).to.equal(201);
+    expect(res.body.ativo).to.equal(true);
+  });
+}
+
+docs {
+  Cadastra um ano letivo. **Só admin.** O id fica salvo em `anoLetivoId`.
+
+  Campos: `ano` (2000 a 2100, sem repetir), `data_inicio` e `data_fim` (`AAAA-MM-DD`, fim depois
+  do início) e `ativo` (padrão `true`).
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `SEM_PERMISSAO` (403), `DADOS_INVALIDOS` (400),
+  `ANO_LETIVO_DUPLICADO` (409).
+}

@@ -21,6 +21,12 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
     return;
   }
 
+  // Corpo acima do limite do express.json().
+  if ((err as { type?: string })?.type === 'entity.too.large') {
+    res.status(413).json({ error: { code: 'CORPO_GRANDE_DEMAIS', message: 'Dados enviados grandes demais.' } });
+    return;
+  }
+
   console.error(err);
   res.status(500).json({ error: { code: 'ERRO_INTERNO', message: 'Erro interno. Tente novamente.' } });
 }

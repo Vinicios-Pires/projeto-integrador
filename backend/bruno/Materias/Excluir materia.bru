@@ -1,0 +1,31 @@
+meta {
+  name: Excluir materia
+  type: http
+  seq: 7
+}
+
+delete {
+  url: {{baseUrl}}/disciplinas/{{disciplinaId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("matéria excluída", function () {
+    expect(res.status).to.equal(204);
+  });
+}
+
+docs {
+  Exclui a matéria de `disciplinaId`. Os vínculos com turmas saem junto; planos, notas e provas
+  da matéria continuam existindo, só ficam sem matéria.
+
+  Quem pode: o **dono** e o **admin**.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `SEM_PERMISSAO` (403, gestão),
+  `DISCIPLINA_NAO_ENCONTRADA` (404).
+}

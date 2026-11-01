@@ -1,0 +1,30 @@
+meta {
+  name: Ver materia
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/disciplinas/{{disciplinaId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("matéria devolvida", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body.id).to.equal(bru.getEnvVar("disciplinaId"));
+  });
+}
+
+docs {
+  Mostra a matéria de `disciplinaId`. O dono e a gestão podem ver.
+
+  Matéria de outro professor responde `DISCIPLINA_NAO_ENCONTRADA`, como se não existisse.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DISCIPLINA_NAO_ENCONTRADA` (404).
+}

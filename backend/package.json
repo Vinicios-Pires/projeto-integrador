@@ -19,7 +19,12 @@
     "db:check": "tsx scripts/verificar-banco.ts",
     "test:login": "tsx scripts/testar-login.ts",
     "test:cadastro": "tsx scripts/testar-cadastro.ts",
-    "test:usuarios": "tsx scripts/testar-usuarios.ts"
+    "test:usuarios": "tsx scripts/testar-usuarios.ts",
+    "test:turmas": "tsx scripts/testar-turmas.ts",
+    "test:alunos": "tsx scripts/testar-alunos.ts",
+    "test:disciplinas": "tsx scripts/testar-disciplinas.ts",
+    "test:membros": "tsx scripts/testar-membros.ts",
+    "test:calendario": "tsx scripts/testar-calendario.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

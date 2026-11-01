@@ -1,0 +1,30 @@
+meta {
+  name: Ver turma
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/turmas/{{turmaId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("turma devolvida", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body.id).to.equal(bru.getEnvVar("turmaId"));
+  });
+}
+
+docs {
+  Mostra a turma de `turmaId`. O dono e a gestão podem ver.
+
+  Turma de outro professor responde `TURMA_NAO_ENCONTRADA`, como se não existisse.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `TURMA_NAO_ENCONTRADA` (404).
+}

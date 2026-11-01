@@ -1,0 +1,54 @@
+meta {
+  name: Criar turma
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/turmas
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "nome": "7º A",
+    "serie": "7º Ano",
+    "turno": "Manhã",
+    "ano_letivo": 2026,
+    "capacidade": 35,
+    "observacoes": ""
+  }
+}
+
+script:post-response {
+  // Guarda a turma criada em `turmaId`, para os outros pedidos da pasta usarem.
+  if (res.status === 201) {
+    bru.setEnvVar("turmaId", res.body.id);
+  }
+}
+
+tests {
+  test("turma criada", function () {
+    expect(res.status).to.equal(201);
+    expect(res.body.id).to.be.a("string");
+    expect(res.body.alunos_count).to.equal(0);
+  });
+}
+
+docs {
+  Cria uma turma. **Qualquer usuário logado** pode criar; o dono é sempre quem cria
+  (um `user_id` no corpo é ignorado).
+
+  Obrigatórios: `nome` e `serie`. Opcionais: `turno` (`Manhã`, `Tarde`, `Noturno`, `Integral`;
+  padrão `Manhã`), `ano_letivo` (padrão: ano atual), `capacidade` (padrão 35), `observacoes` e
+  `tipo` (`regular` ou `personalizada`; padrão `regular`).
+
+  A turma criada fica salva na variável `turmaId`.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400).
+}

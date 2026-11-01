@@ -1,0 +1,49 @@
+meta {
+  name: Criar horario
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/horario-grade
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "ordem": 99,
+    "rotulo": "Faixa de teste",
+    "hora_inicio": "18:00",
+    "hora_fim": "18:50",
+    "tipo": "aula"
+  }
+}
+
+script:post-response {
+  if (res.status === 201) {
+    bru.setEnvVar("horarioId", res.body.id);
+  }
+}
+
+tests {
+  test("faixa criada", function () {
+    expect(res.status).to.equal(201);
+    expect(res.body.hora_inicio).to.equal("18:00:00");
+  });
+}
+
+docs {
+  Cria uma faixa na grade de horários. **Só admin.** A faixa fica salva em `horarioId`.
+
+  Campos: `ordem` (1 a 100), `rotulo`, `hora_inicio` e `hora_fim` (`HH:MM`, fim depois do início)
+  e `tipo` (`aula` (padrão), `intervalo`, `almoco`, `planejamento`).
+
+  **Atenção:** altera a grade real da escola. Rode *Excluir horario* depois de testar.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `SEM_PERMISSAO` (403), `DADOS_INVALIDOS` (400).
+}

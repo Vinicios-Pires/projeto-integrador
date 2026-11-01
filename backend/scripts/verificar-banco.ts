@@ -59,7 +59,11 @@ async function main() {
   check(!!admin, `Administrador ${email} existe`);
   check(admin?.profile?.status === 'ativo', 'Administrador está ativo');
   check(!!admin?.user_roles.some((r) => r.role === 'admin'), 'Administrador tem papel admin');
-  check(admin?.deve_trocar_senha === true, 'Administrador precisa trocar a senha no 1º acesso');
+  // O seed cria o admin com troca obrigatória; depois do 1º acesso, ele já trocou. Os dois estados são válidos.
+  check(
+    typeof admin?.deve_trocar_senha === 'boolean',
+    `Administrador ${admin?.deve_trocar_senha ? 'ainda precisa trocar a senha temporária' : 'já trocou a senha do 1º acesso'}`,
+  );
   check(
     !!admin && !(await verifyPassword('senha-errada', admin.senha_hash)),
     'Senha errada é rejeitada',

@@ -1,0 +1,29 @@
+meta {
+  name: Listar grade
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/horario-grade
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("grade devolvida", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body).to.be.an("array");
+  });
+}
+
+docs {
+  Lista as faixas de horário do dia (aulas, intervalos, almoço, planejamento), em ordem.
+  Horários no formato `HH:MM:SS`. **Qualquer usuário logado** pode ler.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401).
+}

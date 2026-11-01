@@ -1,0 +1,36 @@
+meta {
+  name: Editar materia
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{baseUrl}}/disciplinas/{{disciplinaId}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  { "cor": "roxo" }
+}
+
+tests {
+  test("matéria alterada", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body.cor).to.equal("roxo");
+  });
+}
+
+docs {
+  Altera **só os campos enviados** da matéria de `disciplinaId` (mesmos campos de *Criar matéria*).
+  Para inativar, envie `{ "cor": "__inativa" }`. O dono não muda.
+
+  Quem pode: o **dono** e o **admin**. A gestão vê, mas não altera.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400, inclusive corpo vazio),
+  `SEM_PERMISSAO` (403, gestão), `DISCIPLINA_NAO_ENCONTRADA` (404).
+}

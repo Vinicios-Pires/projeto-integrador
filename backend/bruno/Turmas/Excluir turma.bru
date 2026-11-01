@@ -1,0 +1,31 @@
+meta {
+  name: Excluir turma
+  type: http
+  seq: 5
+}
+
+delete {
+  url: {{baseUrl}}/turmas/{{turmaId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("turma excluída", function () {
+    expect(res.status).to.equal(204);
+  });
+}
+
+docs {
+  Exclui a turma de `turmaId`. **Só turma sem alunos** (inclusive inativos): mova ou exclua
+  os alunos antes. Os vínculos de eletiva saem junto.
+
+  Quem pode: o **dono** e o **admin**.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `SEM_PERMISSAO` (403, gestão),
+  `TURMA_NAO_ENCONTRADA` (404), `TURMA_COM_ALUNOS` (409).
+}

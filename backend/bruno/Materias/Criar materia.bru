@@ -1,0 +1,46 @@
+meta {
+  name: Criar materia
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/disciplinas
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  { "nome": "Matemática", "cor": "verde" }
+}
+
+script:post-response {
+  // Guarda a matéria criada em `disciplinaId`, para os outros pedidos da pasta usarem.
+  if (res.status === 201) {
+    bru.setEnvVar("disciplinaId", res.body.id);
+  }
+}
+
+tests {
+  test("matéria criada", function () {
+    expect(res.status).to.equal(201);
+    expect(res.body.cor).to.equal("verde");
+  });
+}
+
+docs {
+  Cria uma matéria. **Qualquer usuário logado** pode criar; o dono é sempre quem cria
+  (um `user_id` no corpo é ignorado).
+
+  Obrigatório: `nome`. Opcionais: `cor` (`azul` (padrão), `roxo`, `verde`, `vermelho`, `laranja`,
+  `rosa`, `amarelo`, `ciano`, `indigo`, `cinza`; ou `__inativa` para marcar como inativa),
+  `professor` e `carga_horaria`.
+
+  A matéria criada fica salva na variável `disciplinaId`.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400).
+}

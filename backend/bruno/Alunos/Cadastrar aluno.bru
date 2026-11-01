@@ -1,0 +1,52 @@
+meta {
+  name: Cadastrar aluno
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/alunos
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "turma_id": "{{turmaId}}",
+    "nome": "Ana Silva",
+    "numero_chamada": 1
+  }
+}
+
+script:post-response {
+  // Guarda o aluno criado em `alunoId`, para os outros pedidos da pasta usarem.
+  if (res.status === 201) {
+    bru.setEnvVar("alunoId", res.body.id);
+  }
+}
+
+tests {
+  test("aluno cadastrado", function () {
+    expect(res.status).to.equal(201);
+    expect(res.body.turma_id).to.equal(bru.getEnvVar("turmaId"));
+    expect(res.body.turmas).to.be.an("object");
+  });
+}
+
+docs {
+  Cadastra um aluno na turma de `turmaId` (rode *Turmas > Criar turma* antes).
+  **Qualquer usuário logado** pode cadastrar (cadastro compartilhado da escola).
+
+  Obrigatórios: `turma_id` e `nome`. Opcionais: `numero_chamada`, `serie` (sem ela, vale a da
+  turma), `data_nascimento` (`AAAA-MM-DD`), `email`, `telefone`, `responsavel`, `observacoes`
+  e `ativo` (padrão `true`).
+
+  O aluno criado fica salvo na variável `alunoId`.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400), `TURMA_INVALIDA` (400),
+  `ALUNO_DUPLICADO` (409, mesmo nome na mesma turma).
+}

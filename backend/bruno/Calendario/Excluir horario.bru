@@ -1,0 +1,29 @@
+meta {
+  name: Excluir horario
+  type: http
+  seq: 4
+}
+
+delete {
+  url: {{baseUrl}}/horario-grade/{{horarioId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("faixa excluída", function () {
+    expect(res.status).to.equal(204);
+  });
+}
+
+docs {
+  Exclui a faixa de `horarioId`. **Só admin**, e só faixa que **não está na agenda de nenhum
+  professor** (senão a rotina deles seria apagada junto). Para mudar um horário em uso, edite.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `SEM_PERMISSAO` (403), `HORARIO_NAO_ENCONTRADO` (404),
+  `HORARIO_EM_USO` (409).
+}
