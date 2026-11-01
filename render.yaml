@@ -10,7 +10,8 @@ services:
     region: virginia
     plan: free
     rootDir: backend
-    buildCommand: npm ci && npx prisma generate && npm run build
+    # --include=dev: com NODE_ENV=production o npm pularia o TypeScript e o Prisma CLI, que o build usa.
+    buildCommand: npm ci --include=dev && npx prisma generate && npm run build
     # As migrations são aplicadas a cada subida (no plano gratuito não há "pre-deploy").
     startCommand: npx prisma migrate deploy && npm start
     healthCheckPath: /health
