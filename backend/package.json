@@ -45,7 +45,8 @@
     "test:tela-cadastros": "tsx scripts/testar-tela-cadastros.ts",
     "test:tela-notas": "tsx scripts/testar-tela-notas.ts",
     "test:tela-planos": "tsx scripts/testar-tela-planos.ts",
-    "test:tela-diario-agenda": "tsx scripts/testar-tela-diario-agenda.ts"
+    "test:tela-diario-agenda": "tsx scripts/testar-tela-diario-agenda.ts",
+    "test:tela-ocorrencias-pdi": "tsx scripts/testar-tela-ocorrencias-pdi.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

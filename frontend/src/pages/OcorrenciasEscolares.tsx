@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { api, mensagemDeErro } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/hooks/use-permissions';
 import { Button } from '@/components/ui/button';
@@ -40,7 +40,6 @@ export default function OcorrenciasEscolares() {
   const { user } = useAuth();
   const { isGestao, isAdmin, canEdit } = usePermissions();
   const { toast } = useToast();
-  const sb = supabase as any;
 
   const [items, setItems] = useState<Ocorrencia[]>([]);
   const [profilesById, setProfilesById] = useState<Record<string, { nome: string | null; email: string | null }>>({});
@@ -67,38 +66,43 @@ export default function OcorrenciasEscolares() {
 
   const load = async () => {
     setLoading(true);
-    const { data, error } = await sb.from('ocorrencias_escolares').select('*').order('created_at', { ascending: false });
-    if (error) { toast({ title: 'Erro', description: error.message, variant: 'destructive' }); setLoading(false); return; }
-    setItems(data || []);
-    const ids = Array.from(new Set([...(data || []).map((o: Ocorrencia) => o.user_id), ...(data || []).map((o: Ocorrencia) => o.gestao_user_id).filter(Boolean)])) as string[];
-    if (ids.length) {
-      const p = await sb.from('profiles').select('id, nome, email').in('id', ids);
-      const map: Record<string, any> = {};
-      (p.data || []).forEach((x: any) => { map[x.id] = x; });
-      setProfilesById(map);
+    let data: (Ocorrencia & { professor_nome: string | null; gestao_nome: string | null })[];
+    try {
+      // As mais recentes primeiro, já com os nomes de quem registrou e de quem respondeu.
+      data = await api.get('/ocorrencias-escolares');
+    } catch (err) {
+      toast({ title: 'Erro', description: mensagemDeErro(err), variant: 'destructive' });
+      setLoading(false);
+      return;
     }
+    setItems(data);
+    const map: Record<string, { nome: string; email: string }> = {};
+    data.forEach(o => {
+      map[o.user_id] = { nome: o.professor_nome ?? '', email: '' };
+      if (o.gestao_user_id) map[o.gestao_user_id] = { nome: o.gestao_nome ?? '', email: '' };
+    });
+    setProfilesById(map);
     setLoading(false);
   };
 
   const loadMinhasTD = async () => {
     if (!user) return;
-    const { data } = await sb
-      .from('turma_disciplinas')
-      .select('turma:turmas(nome), disciplina:disciplinas(nome)')
-      .eq('user_id', user.id);
-    const rows: TDRow[] = (data || [])
-      .map((r: any) => ({ turma_nome: r.turma?.nome || '', disciplina_nome: r.disciplina?.nome || '' }))
+    const data = await api.get<{ turmas: { nome: string } | null; disciplinas: { nome: string } | null }[]>(
+      '/turma-disciplinas', { user_id: user.id },
+    ).catch(() => []);
+    const rows: TDRow[] = data
+      .map(r => ({ turma_nome: r.turmas?.nome || '', disciplina_nome: r.disciplinas?.nome || '' }))
       .filter((r: TDRow) => r.turma_nome && r.disciplina_nome);
     setMinhasTD(rows);
   };
 
   useEffect(() => { load(); loadMinhasTD(); }, [user?.id]);
 
+  // Sem atualização "ao vivo" no backend: relê a cada 30 s e quando a janela volta ao foco.
   useEffect(() => {
-    const ch = supabase.channel('oe-stream')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ocorrencias_escolares' }, () => load())
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
+    const t = window.setInterval(load, 30_000);
+    window.addEventListener('focus', load);
+    return () => { window.clearInterval(t); window.removeEventListener('focus', load); };
   }, []);
 
   const turmasDisponiveis = useMemo(
@@ -138,11 +142,15 @@ export default function OcorrenciasEscolares() {
     if (!user || !novo.descricao.trim()) { toast({ title: 'Descreva o ocorrido', variant: 'destructive' }); return; }
     if (!novo.turma) { toast({ title: 'Selecione a turma', variant: 'destructive' }); return; }
     if (!novo.disciplina) { toast({ title: 'Selecione a disciplina', variant: 'destructive' }); return; }
-    const { error } = await sb.from('ocorrencias_escolares').insert({
-      user_id: user.id, data: novo.data, turma: novo.turma, disciplina: novo.disciplina,
-      alunos: novo.alunos || null, tipo: novo.tipo, descricao: novo.descricao,
-    });
-    if (error) { toast({ title: 'Erro', description: error.message, variant: 'destructive' }); return; }
+    try {
+      await api.post('/ocorrencias-escolares', {
+        data: novo.data, turma: novo.turma, disciplina: novo.disciplina,
+        alunos: novo.alunos || null, tipo: novo.tipo, descricao: novo.descricao,
+      });
+    } catch (err) {
+      toast({ title: 'Erro', description: mensagemDeErro(err), variant: 'destructive' });
+      return;
+    }
     toast({ title: 'Ocorrência enviada para a gestão' });
     setOpenNew(false);
     setNovo({ data: new Date().toISOString().slice(0, 10), turma: '', disciplina: '', alunos: '', tipo: 'comportamento', descricao: '' });
@@ -151,15 +159,19 @@ export default function OcorrenciasEscolares() {
 
   const marcarVisto = async (o: Ocorrencia) => {
     if (o.user_id === user?.id && !o.visto_pelo_professor) {
-      await sb.from('ocorrencias_escolares').update({ visto_pelo_professor: true }).eq('id', o.id);
+      await api.post(`/ocorrencias-escolares/${o.id}/visto`).catch(() => {});
     }
   };
 
   const remover = async (o: Ocorrencia) => {
     if (!confirm('Remover ocorrência?')) return;
-    const { error } = await sb.from('ocorrencias_escolares').delete().eq('id', o.id);
-    if (error) toast({ title: 'Erro', description: error.message, variant: 'destructive' });
-    else { toast({ title: 'Removido' }); load(); }
+    try {
+      await api.delete(`/ocorrencias-escolares/${o.id}`);
+      toast({ title: 'Removido' });
+      load();
+    } catch (err) {
+      toast({ title: 'Erro', description: mensagemDeErro(err), variant: 'destructive' });
+    }
   };
 
   const discOu = (d: string | null) => d && d.trim() ? d : 'Disciplina não informada';
@@ -405,7 +417,6 @@ export default function OcorrenciasEscolares() {
 function DetalheDialog({ o, profNome, onClose }: { o: Ocorrencia; profNome: string; onClose: () => void }) {
   const { isGestao, isAdmin } = usePermissions();
   const { toast } = useToast();
-  const sb = supabase as any;
   const [status, setStatus] = useState<Status>(o.status);
   const [providencias, setProvidencias] = useState(o.providencias || '');
   const [saving, setSaving] = useState(false);
@@ -416,10 +427,16 @@ function DetalheDialog({ o, profNome, onClose }: { o: Ocorrencia; profNome: stri
 
   const salvar = async () => {
     setSaving(true);
-    const { error } = await sb.from('ocorrencias_escolares').update({ status, providencias }).eq('id', o.id);
-    setSaving(false);
-    if (error) toast({ title: 'Erro', description: error.message, variant: 'destructive' });
-    else { toast({ title: 'Ocorrência atualizada' }); onClose(); }
+    try {
+      // A resposta da gestão: grava quem respondeu e quando, e avisa o professor ("não vista").
+      await api.post(`/ocorrencias-escolares/${o.id}/resposta`, { status, providencias });
+      toast({ title: 'Ocorrência atualizada' });
+      onClose();
+    } catch (err) {
+      toast({ title: 'Erro', description: mensagemDeErro(err), variant: 'destructive' });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (

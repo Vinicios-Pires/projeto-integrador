@@ -135,6 +135,9 @@ async function main() {
     const r2 = resp.json as Escolar;
     check(resp.status === 200 && r2.status === 'em_andamento' && r2.providencias === 'Conversa com a família' && r2.gestao_user_id === coord.id && r2.respondido_em !== null, 'Gestão responde: situação, providências, quem e quando');
     check(r2.visto_pelo_professor === false, 'A resposta fica "não vista" para avisar o professor');
+    const vistaPeloProf = ((await call('GET', '/ocorrencias-escolares', { token: tA })).json as { id: string; professor_nome: string; gestao_nome: string }[])
+      .find((o) => o.id === r1.id);
+    check(vistaPeloProf?.professor_nome === 'Teste profa' && vistaPeloProf.gestao_nome === 'Teste coord', 'A lista traz o nome de quem registrou e de quem respondeu');
     check(codigo(await call('POST', `/ocorrencias-escolares/${r1.id}/resposta`, { token: tCoord, body: { status: 'arquivada' } })) === 'DADOS_INVALIDOS', 'Situação inventada → erro de dados');
     check(codigo(await call('PATCH', `/ocorrencias-escolares/${r1.id}`, { token: tA, body: { descricao: 'Mudei' } })) === 'OCORRENCIA_EM_ATENDIMENTO', 'Em atendimento, o professor não corrige mais');
     check((await call('POST', `/ocorrencias-escolares/${r1.id}/visto`, { token: tCoord })).status === 403, 'Só quem registrou marca como vista');

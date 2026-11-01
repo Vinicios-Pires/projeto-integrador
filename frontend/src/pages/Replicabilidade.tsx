@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Camera, Download, Eye, ImageIcon, Loader2, Pencil, Plus, Search, Sparkles, Trash2, Upload, X } from 'lucide-react';
 import { exportTablePdf } from '@/lib/pdfHelpers';
-import { supabase } from '@/integrations/supabase/client';
+import { api, linkDoArquivo, linksDosArquivos, mensagemDeErro } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/hooks/use-permissions';
 import { Button } from '@/components/ui/button';
@@ -39,9 +39,7 @@ const BUCKET = 'replicabilidade-fotos';
 const SIGNED_URL_TTL = 60 * 60;
 
 async function getSignedUrl(path: string) {
-  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(path, SIGNED_URL_TTL);
-  if (error) return '';
-  return data?.signedUrl ?? '';
+  return linkDoArquivo(BUCKET, path, SIGNED_URL_TTL).catch(() => '');
 }
 
 function sortFotos(fotos: ReplicabilidadeFoto[] = []) {
@@ -89,20 +87,20 @@ export default function Replicabilidade() {
     lastLoadRef.current = loadId;
     setLoading(true);
 
-    const { data, error } = await supabase
-      .from('replicabilidades' as any)
-      .select('*, fotos:replicabilidade_fotos(*)')
-      .order('created_at', { ascending: false });
-
-    if (lastLoadRef.current !== loadId) return;
-
-    if (error) {
-      toast({ title: 'Erro ao carregar replicabilidades', description: error.message, variant: 'destructive' });
+    // O mural inteiro (as mais novas primeiro), com as fotos e o nome de quem publicou.
+    let data: (ReplicabilidadeRegistro & { autor?: { nome: string | null } })[];
+    try {
+      data = await api.get('/replicabilidades');
+    } catch (err) {
+      if (lastLoadRef.current !== loadId) return;
+      toast({ title: 'Erro ao carregar replicabilidades', description: mensagemDeErro(err), variant: 'destructive' });
       setLoading(false);
       return;
     }
 
-    const list = ((data as any[]) || []).map((item) => ({
+    if (lastLoadRef.current !== loadId) return;
+
+    const list = data.map((item) => ({
       ...item,
       fotos: sortFotos(item.fotos || []),
     })) as ReplicabilidadeRegistro[];
@@ -110,23 +108,18 @@ export default function Replicabilidade() {
     setItems(list);
 
     const nextProfiles: Record<string, Profile> = {};
-    if (list.length > 0) {
-      const ids = Array.from(new Set(list.map((item) => item.user_id)));
-      const { data: profileData } = await supabase.from('profiles').select('id, nome').in('id', ids);
-      (profileData || []).forEach((profile: any) => {
-        nextProfiles[profile.id] = profile;
-      });
-    }
-    if (lastLoadRef.current !== loadId) return;
+    data.forEach((item) => {
+      nextProfiles[item.user_id] = { id: item.user_id, nome: item.autor?.nome ?? null } as Profile;
+    });
     setProfiles(nextProfiles);
 
+    // Miniaturas (a primeira foto de cada), com os links numa ida só.
+    const primeiras = list.flatMap((item) => (item.fotos[0]?.storage_path ? [[item.id, item.fotos[0].storage_path] as const] : []));
+    const links = primeiras.length
+      ? await linksDosArquivos(BUCKET, primeiras.map(([, path]) => path), SIGNED_URL_TTL).catch(() => new Map<string, string>())
+      : new Map<string, string>();
     const nextThumbs: Record<string, string> = {};
-    await Promise.all(
-      list.map(async (item) => {
-        const firstPhoto = item.fotos[0];
-        if (firstPhoto?.storage_path) nextThumbs[item.id] = await getSignedUrl(firstPhoto.storage_path);
-      }),
-    );
+    primeiras.forEach(([id, path]) => { if (links.has(path)) nextThumbs[id] = links.get(path)!; });
     if (lastLoadRef.current !== loadId) return;
     setThumbs(nextThumbs);
     setLoading(false);
@@ -211,12 +204,13 @@ export default function Replicabilidade() {
     const confirmed = window.confirm('Remover esta foto?');
     if (!confirmed) return;
 
-    const { error: deleteError } = await supabase.from('replicabilidade_fotos' as any).delete().eq('id', foto.id);
-    if (deleteError) {
-      toast({ title: 'Erro ao remover foto', description: deleteError.message, variant: 'destructive' });
+    try {
+      // Apaga o registro e o arquivo.
+      await api.delete(`/replicabilidades/${editing.id}/fotos/${foto.id}`);
+    } catch (err) {
+      toast({ title: 'Erro ao remover foto', description: mensagemDeErro(err), variant: 'destructive' });
       return;
     }
-    await supabase.storage.from(BUCKET).remove([foto.storage_path]);
 
     const nextEditing = { ...editing, fotos: editing.fotos.filter((item) => item.id !== foto.id) };
     setEditing(nextEditing);
@@ -228,32 +222,11 @@ export default function Replicabilidade() {
     });
   };
 
-  const uploadPhotos = async (replicabilidadeId: string, startOrder: number) => {
+  /** Envia as fotos pelo backend, em ordem: cada uma vai para o fim do mural da publicação. */
+  const uploadPhotos = async (replicabilidadeId: string) => {
     if (!user || draftPhotos.length === 0) return;
-
-    for (let index = 0; index < draftPhotos.length; index += 1) {
-      const { file } = draftPhotos[index];
-      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
-      const path = `${user.id}/${replicabilidadeId}/${Date.now()}-${index}-${safeName}`;
-      const { error: uploadError } = await supabase.storage.from(BUCKET).upload(path, file, {
-        cacheControl: '3600',
-        contentType: file.type,
-        upsert: false,
-      });
-
-      if (uploadError) throw uploadError;
-
-      const { error: photoError } = await supabase.from('replicabilidade_fotos' as any).insert({
-        replicabilidade_id: replicabilidadeId,
-        storage_path: path,
-        nome: file.name,
-        ordem: startOrder + index,
-      });
-
-      if (photoError) {
-        await supabase.storage.from(BUCKET).remove([path]);
-        throw photoError;
-      }
+    for (const { file } of draftPhotos) {
+      await api.post(`/replicabilidades/${replicabilidadeId}/fotos`, file, { nome: file.name });
     }
   };
 
@@ -272,29 +245,19 @@ export default function Replicabilidade() {
       let itemId = editing?.id;
       if (editing) {
         if (!canEditItem(editing)) throw new Error('Você não tem permissão para editar este registro.');
-        const { error } = await supabase
-          .from('replicabilidades' as any)
-          .update({ titulo: trimmedTitle, descricao: trimmedDescription || null })
-          .eq('id', editing.id);
-        if (error) throw error;
+        await api.patch(`/replicabilidades/${editing.id}`, { titulo: trimmedTitle, descricao: trimmedDescription || null });
       } else {
-        const { data, error } = await supabase
-          .from('replicabilidades' as any)
-          .insert({ user_id: user.id, titulo: trimmedTitle, descricao: trimmedDescription || null })
-          .select('id')
-          .single();
-        if (error) throw error;
-        itemId = (data as any).id;
+        itemId = (await api.post<{ id: string }>('/replicabilidades', { titulo: trimmedTitle, descricao: trimmedDescription || null })).id;
       }
 
-      if (itemId) await uploadPhotos(itemId, editing?.fotos.length || 0);
+      if (itemId) await uploadPhotos(itemId);
 
       toast({ title: editing ? 'Replicabilidade atualizada' : 'Replicabilidade criada' });
       setFormOpen(false);
       resetForm();
       await loadAll();
-    } catch (error: any) {
-      toast({ title: 'Erro ao salvar', description: error?.message || 'Tente novamente.', variant: 'destructive' });
+    } catch (error) {
+      toast({ title: 'Erro ao salvar', description: mensagemDeErro(error), variant: 'destructive' });
     } finally {
       setSaving(false);
     }
@@ -305,13 +268,14 @@ export default function Replicabilidade() {
     const confirmed = window.confirm(`Apagar "${item.titulo}"? Esta ação não pode ser desfeita.`);
     if (!confirmed) return;
 
-    const { error } = await supabase.from('replicabilidades' as any).delete().eq('id', item.id);
-    if (error) {
-      toast({ title: 'Erro ao apagar', description: error.message, variant: 'destructive' });
+    try {
+      // As fotos saem junto (banco e armazenamento).
+      await api.delete(`/replicabilidades/${item.id}`);
+    } catch (err) {
+      toast({ title: 'Erro ao apagar', description: mensagemDeErro(err), variant: 'destructive' });
       return;
     }
 
-    if (item.fotos.length > 0) await supabase.storage.from(BUCKET).remove(item.fotos.map((foto) => foto.storage_path));
     toast({ title: 'Replicabilidade apagada' });
     await loadAll();
   };

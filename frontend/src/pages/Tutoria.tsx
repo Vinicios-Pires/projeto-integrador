@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { api, buscarEmLotes, linkDoArquivo, linksDosArquivos, mensagemDeErro } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/hooks/use-permissions';
 import { Button } from '@/components/ui/button';
@@ -55,11 +55,9 @@ function Avatar({ url, nome, size = 56 }: { url?: string | null; nome: string; s
 }
 
 export default function Tutoria() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { canEdit, isAdmin, isGestao } = usePermissions();
   const { toast } = useToast();
-  const sb = supabase as any;
-
   const [loading, setLoading] = useState(true);
   const [tutorados, setTutorados] = useState<Tutorado[]>([]);
   const [registros, setRegistros] = useState<Registro[]>([]);
@@ -77,32 +75,33 @@ export default function Tutoria() {
   const assinarFotos = useCallback(async (lista: Tutorado[]) => {
     const paths = lista.map(t => t.foto_path).filter(Boolean) as string[];
     if (!paths.length) { setFotoUrls({}); return; }
-    const { data } = await sb.storage.from(FOTOS_BUCKET).createSignedUrls(paths, 3600);
-    const map: Record<string, string> = {};
-    (data || []).forEach((d: any) => { if (d?.path && d?.signedUrl) map[d.path] = d.signedUrl; });
-    setFotoUrls(map);
-  }, [sb]);
+    const links = await linksDosArquivos(FOTOS_BUCKET, paths).catch(() => new Map<string, string>());
+    setFotoUrls(Object.fromEntries(links));
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [tRes, rRes, pRes, tuRes, aRes] = await Promise.all([
-      sb.from('tutorados').select('*').order('nome'),
-      sb.from('tutoria_registros').select('*').order('data', { ascending: false }),
-      sb.from('profiles').select('id,nome,email'),
-      sb.from('turmas').select('id,nome,serie,turno,ano_letivo').order('nome'),
-      sb.from('alunos').select('id,nome,turma_id,numero_chamada,serie,ativo').order('nome'),
+    // Em ordem de nome (o professor vê os seus; a gestão, todos).
+    const [lista, tuRes, aRes, usuarios] = await Promise.all([
+      api.get<Tutorado[]>('/tutorados').catch(() => []),
+      api.get<Turma[]>('/turmas').catch(() => []),
+      api.get<Aluno[]>('/alunos', { ordem: 'nome' }).catch(() => []),
+      // Os nomes dos professores servem ao filtro da gestão; o professor só vê os próprios tutorados.
+      isGestao ? api.get<{ id: string; nome: string; email: string }[]>('/users').catch(() => []) : Promise.resolve([]),
     ]);
-    const lista: Tutorado[] = tRes.data || [];
+    // O último registro de cada tutorado (os mais recentes primeiro).
+    const regs = await buscarEmLotes(lista.map(t => t.id), lote => api.get<Registro[]>('/tutoria-registros', { tutorado_id: lote })).catch(() => []);
     setTutorados(lista);
-    setRegistros(rRes.data || []);
-    setTurmas(tuRes.data || []);
-    setAlunos(aRes.data || []);
+    setRegistros([...regs].sort((a, b) => (b.data || '').localeCompare(a.data || '')));
+    setTurmas(tuRes);
+    setAlunos(aRes);
     const pm: Record<string, { nome: string; email: string }> = {};
-    (pRes.data || []).forEach((p: any) => { pm[p.id] = { nome: p.nome, email: p.email }; });
+    usuarios.forEach(p => { pm[p.id] = { nome: p.nome, email: p.email }; });
+    if (user && profile) pm[user.id] = { nome: profile.nome, email: profile.email };
     setProfiles(pm);
     await assinarFotos(lista);
     setLoading(false);
-  }, [sb, assinarFotos]);
+  }, [assinarFotos, isGestao, user, profile]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -131,9 +130,14 @@ export default function Tutoria() {
 
   const remover = async (t: Tutorado) => {
     if (!confirm(`Remover ${t.nome} da sua lista de tutorados? O aluno continua cadastrado no sistema.`)) return;
-    const { error } = await sb.from('tutorados').delete().eq('id', t.id);
-    if (error) toast({ title: 'Erro', description: error.message, variant: 'destructive' });
-    else { toast({ title: 'Tutorado removido' }); load(); }
+    try {
+      // O acompanhamento, a foto e os documentos saem junto; o cadastro do aluno fica.
+      await api.delete(`/tutorados/${t.id}`);
+      toast({ title: 'Tutorado removido' });
+      load();
+    } catch (err) {
+      toast({ title: 'Erro', description: mensagemDeErro(err), variant: 'destructive' });
+    }
   };
 
   return (
@@ -253,7 +257,6 @@ function AdicionarTutoradoDialog({ onClose, turmas, alunos, tutorados }: {
 }) {
   const { user } = useAuth();
   const { toast } = useToast();
-  const sb = supabase as any;
   const [salvando, setSalvando] = useState(false);
 
   const turmaById = useMemo(() => Object.fromEntries(turmas.map(t => [t.id, t])), [turmas]);
@@ -307,19 +310,20 @@ function AdicionarTutoradoDialog({ onClose, turmas, alunos, tutorados }: {
   const salvarSelecionados = async () => {
     if (!user || selecionados.size === 0) { toast({ title: 'Selecione ao menos um aluno', variant: 'destructive' }); return; }
     setSalvando(true);
-    const rows = Array.from(selecionados).map(id => {
-      const a = alunos.find(x => x.id === id)!;
-      const turma = a.turma_id ? turmaById[a.turma_id] : null;
-      return {
-        user_id: user.id, aluno_id: a.id, nome: a.nome,
-        turma: turma?.nome || a.serie || null,
-        numero_chamada: a.numero_chamada, status: 'ativo',
-      };
-    });
-    const { error } = await sb.from('tutorados').insert(rows);
+    let res: { criados: unknown[]; ja_existiam: unknown[] };
+    try {
+      // Nome, turma e número vêm do cadastro do aluno; quem já era tutorado fica de fora.
+      res = await api.post('/tutorados/vincular', { aluno_ids: Array.from(selecionados) });
+    } catch (err) {
+      setSalvando(false);
+      toast({ title: 'Erro ao vincular', description: mensagemDeErro(err), variant: 'destructive' });
+      return;
+    }
     setSalvando(false);
-    if (error) { toast({ title: 'Erro ao vincular', description: error.message, variant: 'destructive' }); return; }
-    toast({ title: `${rows.length} tutorado(s) vinculado(s)` });
+    toast({
+      title: `${res.criados.length} tutorado(s) vinculado(s)`,
+      description: res.ja_existiam.length ? `${res.ja_existiam.length} já era(m) seu(s) tutorado(s).` : undefined,
+    });
     onClose(true);
   };
 
@@ -336,30 +340,38 @@ function AdicionarTutoradoDialog({ onClose, turmas, alunos, tutorados }: {
     setSalvando(true);
     let alunoId = duplicado?.id ?? null;
     if (!alunoId) {
-      const { data, error } = await sb.from('alunos').insert({
-        nome: novo.nome.trim(), turma_id: novo.turma_id,
-        numero_chamada: novo.numero_chamada ? parseInt(novo.numero_chamada) : null,
-        serie: turma?.serie || null, ativo: novo.ativo === 'true',
-      }).select('id').single();
-      if (error) { setSalvando(false); toast({ title: 'Erro ao cadastrar aluno', description: error.message, variant: 'destructive' }); return; }
-      alunoId = data.id;
+      try {
+        alunoId = (await api.post<{ id: string }>('/alunos', {
+          nome: novo.nome.trim(), turma_id: novo.turma_id,
+          numero_chamada: novo.numero_chamada ? parseInt(novo.numero_chamada) : null,
+          serie: turma?.serie || null, ativo: novo.ativo === 'true',
+        })).id;
+      } catch (err) {
+        setSalvando(false);
+        toast({ title: 'Erro ao cadastrar aluno', description: mensagemDeErro(err), variant: 'destructive' });
+        return;
+      }
     } else {
       toast({ title: 'Aluno já existia', description: 'Vinculado sem duplicar o cadastro.' });
     }
 
-    const { data: tut, error: tErr } = await sb.from('tutorados').insert({
-      user_id: user.id, aluno_id: alunoId, nome: novo.nome.trim(),
-      turma: turma?.nome || null,
-      numero_chamada: novo.numero_chamada ? parseInt(novo.numero_chamada) : null,
-      status: novo.ativo === 'true' ? 'ativo' : 'inativo',
-    }).select('id').single();
-    if (tErr) { setSalvando(false); toast({ title: 'Erro ao vincular tutorado', description: tErr.message, variant: 'destructive' }); return; }
+    let tut: { id: string };
+    try {
+      tut = await api.post('/tutorados', {
+        aluno_id: alunoId, nome: novo.nome.trim(),
+        turma: turma?.nome || null,
+        numero_chamada: novo.numero_chamada ? parseInt(novo.numero_chamada) : null,
+        status: novo.ativo === 'true' ? 'ativo' : 'inativo',
+      });
+    } catch (err) {
+      setSalvando(false);
+      toast({ title: 'Erro ao vincular tutorado', description: mensagemDeErro(err), variant: 'destructive' });
+      return;
+    }
 
     if (fotoFile) {
-      const ext = fotoFile.name.split('.').pop() || 'jpg';
-      const path = `${user.id}/${tut.id}-${Date.now()}.${ext}`;
-      const { error: upErr } = await sb.storage.from(FOTOS_BUCKET).upload(path, fotoFile, { upsert: true });
-      if (!upErr) await sb.from('tutorados').update({ foto_path: path }).eq('id', tut.id);
+      await api.put(`/tutorados/${tut.id}/foto`, fotoFile, { nome: fotoFile.name }).catch((err) =>
+        toast({ title: 'Foto não enviada', description: mensagemDeErro(err), variant: 'destructive' }));
     }
     setSalvando(false);
     toast({ title: 'Tutorado adicionado' });
@@ -482,7 +494,6 @@ function Prontuario({ tutorado, fotoUrl, tutorNome, readOnly, onClose }: {
 }) {
   const { user } = useAuth();
   const { toast } = useToast();
-  const sb = supabase as any;
   const mudou = useRef(false);
 
   const [loading, setLoading] = useState(true);
@@ -503,27 +514,24 @@ function Prontuario({ tutorado, fotoUrl, tutorNome, readOnly, onClose }: {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [c, r, b, d] = await Promise.all([
-      sb.from('tutoria_checkins').select('*').eq('tutorado_id', tutorado.id).order('created_at', { ascending: false }),
-      sb.from('tutoria_registros').select('*').eq('tutorado_id', tutorado.id).order('data', { ascending: false }),
-      sb.from('tutoria_combinados').select('*').eq('tutorado_id', tutorado.id).order('data', { ascending: false }),
-      sb.from('tutoria_documentos').select('*').eq('tutorado_id', tutorado.id).order('created_at', { ascending: false }),
-    ]);
-    setCheckins(c.data || []); setRegistros(r.data || []); setCombinados(b.data || []); setDocumentos(d.data || []);
+    // O tutorado vem com todo o acompanhamento numa ida só.
+    const det = await api.get<{ checkins: Checkin[]; registros: Registro[]; combinados: Combinado[]; documentos: Documento[] }>(
+      `/tutorados/${tutorado.id}`,
+    ).catch(() => ({ checkins: [], registros: [], combinados: [], documentos: [] }));
+    setCheckins(det.checkins); setRegistros(det.registros); setCombinados(det.combinados); setDocumentos(det.documentos);
 
     if (tutorado.aluno_id) {
-      const { data: nData } = await sb.from('notas')
-        .select('id,nota,bimestre,observacoes,tipos_avaliacao(nome,categoria)')
-        .eq('aluno_id', tutorado.aluno_id).order('bimestre');
-      setNotas(nData || []);
+      const nData = await api.get<{ bimestre: number }[]>('/notas', { aluno_id: tutorado.aluno_id }).catch(() => []);
+      setNotas([...nData].sort((a, b) => a.bimestre - b.bimestre));
     } else setNotas([]);
 
-    const { data: oData } = await sb.from('ocorrencias_escolares')
-      .select('id,data,tipo,descricao,status,providencias,disciplina,alunos')
-      .ilike('alunos', `%${tutorado.nome.split(' ')[0]}%`).order('data', { ascending: false });
-    setOcorrencias((oData || []).filter((o: any) => (o.alunos || '').toLowerCase().includes(tutorado.nome.toLowerCase().split(' ')[0])));
+    const primeiroNome = tutorado.nome.split(' ')[0];
+    const oData = await api.get<{ data: string; alunos: string | null }[]>('/ocorrencias-escolares', { aluno: primeiroNome }).catch(() => []);
+    setOcorrencias([...oData]
+      .filter(o => (o.alunos || '').toLowerCase().includes(primeiroNome.toLowerCase()))
+      .sort((a, b) => b.data.localeCompare(a.data)));
     setLoading(false);
-  }, [sb, tutorado.id, tutorado.aluno_id, tutorado.nome]);
+  }, [tutorado.id, tutorado.aluno_id, tutorado.nome]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -531,82 +539,111 @@ function Prontuario({ tutorado, fotoUrl, tutorNome, readOnly, onClose }: {
   const trocarFoto = async (file: File | null) => {
     if (!file || !user) return;
     setEnviando(true);
-    const ext = file.name.split('.').pop() || 'jpg';
-    const path = `${user.id}/${tutorado.id}-${Date.now()}.${ext}`;
-    const { error } = await sb.storage.from(FOTOS_BUCKET).upload(path, file, { upsert: true });
-    if (error) { setEnviando(false); toast({ title: 'Erro ao enviar foto', description: error.message, variant: 'destructive' }); return; }
-    const antiga = fotoPath;
-    await sb.from('tutorados').update({ foto_path: path }).eq('id', tutorado.id);
-    if (antiga) await sb.storage.from(FOTOS_BUCKET).remove([antiga]);
-    const { data: signed } = await sb.storage.from(FOTOS_BUCKET).createSignedUrl(path, 3600);
-    setFotoPath(path); setFotoLocal(signed?.signedUrl || null);
+    let path: string | null;
+    try {
+      // O backend troca a foto e apaga a anterior.
+      path = (await api.put<{ foto_path: string | null }>(`/tutorados/${tutorado.id}/foto`, file, { nome: file.name })).foto_path;
+    } catch (err) {
+      setEnviando(false);
+      toast({ title: 'Erro ao enviar foto', description: mensagemDeErro(err), variant: 'destructive' });
+      return;
+    }
+    setFotoPath(path); setFotoLocal(path ? await linkDoArquivo(FOTOS_BUCKET, path).catch(() => null) : null);
     mudou.current = true; setEnviando(false);
     toast({ title: 'Foto atualizada' });
   };
   const removerFoto = async () => {
     if (!fotoPath) return;
-    await sb.from('tutorados').update({ foto_path: null }).eq('id', tutorado.id);
-    await sb.storage.from(FOTOS_BUCKET).remove([fotoPath]);
+    try {
+      await api.delete(`/tutorados/${tutorado.id}/foto`);
+    } catch (err) {
+      toast({ title: 'Erro ao remover a foto', description: mensagemDeErro(err), variant: 'destructive' });
+      return;
+    }
     setFotoPath(null); setFotoLocal(null); mudou.current = true;
   };
 
   /* registros e combinados */
   const addCheckin = async () => {
     if (!user) return;
-    const { error } = await sb.from('tutoria_checkins').insert({ tutorado_id: tutorado.id, user_id: user.id, humor: novoHumor, observacao: obsCheckin || null });
-    if (error) toast({ title: 'Erro', description: error.message, variant: 'destructive' });
-    else { setObsCheckin(''); toast({ title: 'Check-in registrado' }); mudou.current = true; load(); }
+    try {
+      await api.post(`/tutorados/${tutorado.id}/checkins`, { humor: novoHumor, observacao: obsCheckin || null });
+      setObsCheckin(''); toast({ title: 'Check-in registrado' }); mudou.current = true; load();
+    } catch (err) {
+      toast({ title: 'Erro', description: mensagemDeErro(err), variant: 'destructive' });
+    }
   };
   const addRegistro = async () => {
     if (!user || !novoReg.como_esta.trim()) { toast({ title: 'Preencha "Como o aluno está"', variant: 'destructive' }); return; }
-    const { error } = await sb.from('tutoria_registros').insert({ tutorado_id: tutorado.id, user_id: user.id, ...novoReg });
-    if (error) toast({ title: 'Erro', description: error.message, variant: 'destructive' });
-    else { setNovoReg({ como_esta: '', observacao: '', combinado: '', proxima_acao: '' }); toast({ title: 'Registro salvo' }); mudou.current = true; load(); }
+    try {
+      await api.post(`/tutorados/${tutorado.id}/registros`, novoReg);
+      setNovoReg({ como_esta: '', observacao: '', combinado: '', proxima_acao: '' }); toast({ title: 'Registro salvo' }); mudou.current = true; load();
+    } catch (err) {
+      toast({ title: 'Erro', description: mensagemDeErro(err), variant: 'destructive' });
+    }
   };
   const removerRegistro = async (r: Registro) => {
     if (!confirm('Excluir este registro?')) return;
-    const { error } = await sb.from('tutoria_registros').delete().eq('id', r.id);
-    if (error) toast({ title: 'Erro', description: error.message, variant: 'destructive' });
-    else { mudou.current = true; load(); }
+    try {
+      await api.delete(`/tutorados/${tutorado.id}/registros/${r.id}`);
+      mudou.current = true; load();
+    } catch (err) {
+      toast({ title: 'Erro', description: mensagemDeErro(err), variant: 'destructive' });
+    }
   };
   const addCombinado = async () => {
     if (!user || !novoComb.trim()) return;
-    const { error } = await sb.from('tutoria_combinados').insert({ tutorado_id: tutorado.id, user_id: user.id, descricao: novoComb });
-    if (error) toast({ title: 'Erro', description: error.message, variant: 'destructive' });
-    else { setNovoComb(''); load(); }
+    try {
+      await api.post(`/tutorados/${tutorado.id}/combinados`, { descricao: novoComb });
+      setNovoComb(''); load();
+    } catch (err) {
+      toast({ title: 'Erro', description: mensagemDeErro(err), variant: 'destructive' });
+    }
   };
   const togglarComb = async (c: Combinado) => {
     const status = c.status === 'concluido' ? 'pendente' : 'concluido';
-    const { error } = await sb.from('tutoria_combinados').update({ status }).eq('id', c.id);
-    if (error) toast({ title: 'Erro', description: error.message, variant: 'destructive' });
-    else load();
+    try {
+      await api.patch(`/tutorados/${tutorado.id}/combinados/${c.id}`, { status });
+      load();
+    } catch (err) {
+      toast({ title: 'Erro', description: mensagemDeErro(err), variant: 'destructive' });
+    }
   };
 
   /* documentos */
   const enviarDocumento = async (file: File | null) => {
     if (!file || !user) return;
     setEnviando(true);
-    const path = `${user.id}/${tutorado.id}/${Date.now()}-${file.name.replace(/[^\w.\-]/g, '_')}`;
-    const { error } = await sb.storage.from(DOCS_BUCKET).upload(path, file);
-    if (error) { setEnviando(false); toast({ title: 'Erro no upload', description: error.message, variant: 'destructive' }); return; }
-    const { error: dbErr } = await sb.from('tutoria_documentos').insert({
-      tutorado_id: tutorado.id, user_id: user.id, storage_path: path,
-      nome_arquivo: file.name, mime_type: file.type, tamanho_bytes: file.size,
-    });
+    try {
+      // O backend guarda o arquivo na pasta do tutor e registra o documento (ou nenhum dos dois).
+      await api.post(`/tutorados/${tutorado.id}/documentos`, file, { nome: file.name });
+    } catch (err) {
+      setEnviando(false);
+      toast({ title: 'Erro no upload', description: mensagemDeErro(err), variant: 'destructive' });
+      return;
+    }
     setEnviando(false);
-    if (dbErr) { await sb.storage.from(DOCS_BUCKET).remove([path]); toast({ title: 'Erro', description: dbErr.message, variant: 'destructive' }); return; }
     toast({ title: 'Documento anexado' }); load();
   };
   const abrirDocumento = async (d: Documento, baixar = false) => {
-    const { data, error } = await sb.storage.from(DOCS_BUCKET).createSignedUrl(d.storage_path, 300, baixar ? { download: d.nome_arquivo } : undefined);
-    if (error || !data?.signedUrl) { toast({ title: 'Erro ao abrir', variant: 'destructive' }); return; }
-    window.open(data.signedUrl, '_blank', 'noopener');
+    try {
+      const { url } = await api.get<{ url: string }>(`/files/${DOCS_BUCKET}/url`, {
+        path: d.storage_path, segundos: 300, download: baixar ? d.nome_arquivo : undefined,
+      });
+      window.open(url, '_blank', 'noopener');
+    } catch {
+      toast({ title: 'Erro ao abrir', variant: 'destructive' });
+    }
   };
   const removerDocumento = async (d: Documento) => {
     if (!confirm(`Remover "${d.nome_arquivo}"?`)) return;
-    const { error } = await sb.from('tutoria_documentos').delete().eq('id', d.id);
-    if (error) { toast({ title: 'Erro', description: error.message, variant: 'destructive' }); return; }
-    await sb.storage.from(DOCS_BUCKET).remove([d.storage_path]);
+    try {
+      // Apaga o registro e o arquivo.
+      await api.delete(`/tutorados/${tutorado.id}/documentos/${d.id}`);
+    } catch (err) {
+      toast({ title: 'Erro', description: mensagemDeErro(err), variant: 'destructive' });
+      return;
+    }
     load();
   };
 

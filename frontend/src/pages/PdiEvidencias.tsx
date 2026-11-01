@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { api, linkDoArquivo, linksDosArquivos, mensagemDeErro } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/hooks/use-permissions';
 import { Button } from '@/components/ui/button';
@@ -70,8 +70,7 @@ const emptyForm = (): Partial<Evidencia> => ({
 });
 
 async function signUrl(path: string, bucket: string): Promise<string> {
-  const { data } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 60);
-  return data?.signedUrl || '';
+  return linkDoArquivo(bucket, path).catch(() => '');
 }
 
 export default function PdiEvidencias() {
@@ -116,37 +115,31 @@ export default function PdiEvidencias() {
   async function loadAll() {
     if (!user) return;
     setLoading(true);
-    const [evRes, turmasRes, discRes] = await Promise.all([
-      supabase
-        .from('pdi_evidencias' as any)
-        .select('*, fotos:pdi_evidencia_fotos(*), documentos:pdi_evidencia_documentos(*)')
-        .order('data_realizacao', { ascending: false }),
-      supabase.from('turmas').select('id, nome, serie').order('nome'),
-      supabase.from('disciplinas').select('id, nome, cor').order('nome'),
+    // As mais recentes primeiro, cada uma com as fotos e os documentos.
+    const [evs, turmasRes, discRes] = await Promise.all([
+      api.get<Evidencia[]>('/pdi-evidencias').catch(() => []),
+      api.get<Turma[]>('/turmas').catch(() => []),
+      api.get<Disciplina[]>('/disciplinas').catch(() => []),
     ]);
-    const evs = (evRes.data as any[]) || [];
-    setEvidencias(evs as Evidencia[]);
-    setTurmas((turmasRes.data as Turma[]) || []);
-    setDisciplinas((discRes.data as Disciplina[]) || []);
+    setEvidencias(evs);
+    setTurmas(turmasRes);
+    setDisciplinas(discRes);
 
     if (isGestao && evs.length) {
-      const ids = Array.from(new Set(evs.map((e) => e.user_id)));
-      const { data: pf } = await supabase.from('profiles').select('id, nome').in('id', ids);
+      const ids = new Set(evs.map((e) => e.user_id));
+      const usuarios = await api.get<Profile[]>('/users').catch(() => []);
       const map: Record<string, Profile> = {};
-      (pf || []).forEach((p: any) => (map[p.id] = p));
+      usuarios.filter((p) => ids.has(p.id)).forEach((p) => (map[p.id] = p));
       setProfiles(map);
     }
 
-    // pre-load card thumbnails (first foto)
+    // Miniaturas dos cartões (a primeira foto de cada), com os links numa ida só.
+    const primeiras = evs.flatMap((e) => (e.fotos?.[0]?.storage_path ? [[e.id, e.fotos[0].storage_path] as const] : []));
+    const links = primeiras.length
+      ? await linksDosArquivos('pdi-fotos', primeiras.map(([, path]) => path)).catch(() => new Map<string, string>())
+      : new Map<string, string>();
     const thumbs: Record<string, string> = {};
-    await Promise.all(
-      evs.map(async (e: any) => {
-        const f = e.fotos?.[0];
-        if (f?.storage_path) {
-          thumbs[e.id] = await signUrl(f.storage_path, 'pdi-fotos');
-        }
-      }),
-    );
+    primeiras.forEach(([id, path]) => { if (links.has(path)) thumbs[id] = links.get(path)!; });
     setCardThumbs(thumbs);
     setLoading(false);
   }
@@ -181,19 +174,16 @@ export default function PdiEvidencias() {
     setFormOpen(true);
   }
 
-  async function uploadFiles(evId: string, files: File[], bucket: string) {
-    if (!user || !files.length) return [];
-    const uploaded: { path: string; nome: string; mime: string; size: number }[] = [];
+  /** Envia os arquivos pelo backend, que guarda na pasta do professor dono e anota na evidência. */
+  async function uploadFiles(evId: string, files: File[], tipo: 'fotos' | 'documentos') {
+    if (!user || !files.length) return;
     for (const f of files) {
-      const path = `${user.id}/${evId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${f.name}`;
-      const { error } = await supabase.storage.from(bucket).upload(path, f, { upsert: false, contentType: f.type });
-      if (error) {
-        toast({ title: 'Erro no upload', description: `${f.name}: ${error.message}`, variant: 'destructive' });
-        continue;
+      try {
+        await api.post(`/pdi-evidencias/${evId}/${tipo}`, f, { nome: f.name });
+      } catch (err) {
+        toast({ title: 'Erro no upload', description: `${f.name}: ${mensagemDeErro(err)}`, variant: 'destructive' });
       }
-      uploaded.push({ path, nome: f.name, mime: f.type, size: f.size });
     }
-    return uploaded;
   }
 
   async function save() {
@@ -204,8 +194,7 @@ export default function PdiEvidencias() {
     }
     setSaving(true);
     try {
-      const payload: any = {
-        user_id: user.id,
+      const payload = {
         titulo: form.titulo,
         data_realizacao: form.data_realizacao,
         ano_letivo: Number(form.ano_letivo) || ANO_ATUAL,
@@ -219,40 +208,20 @@ export default function PdiEvidencias() {
       };
       let evId = editing?.id;
       if (editing) {
-        const { error } = await supabase.from('pdi_evidencias' as any).update(payload).eq('id', editing.id);
-        if (error) throw error;
+        await api.patch(`/pdi-evidencias/${editing.id}`, payload);
       } else {
-        const { data, error } = await supabase.from('pdi_evidencias' as any).insert(payload).select('id').single();
-        if (error) throw error;
-        evId = (data as any).id;
+        evId = (await api.post<{ id: string }>('/pdi-evidencias', payload)).id;
       }
 
       if (evId) {
-        const fotos = await uploadFiles(evId, newFotos, 'pdi-fotos');
-        if (fotos.length) {
-          await supabase.from('pdi_evidencia_fotos' as any).insert(
-            fotos.map((f) => ({ evidencia_id: evId, storage_path: f.path, url: f.path, nome: f.nome })),
-          );
-        }
-        const docs = await uploadFiles(evId, newDocs, 'pdi-documentos');
-        if (docs.length) {
-          await supabase.from('pdi_evidencia_documentos' as any).insert(
-            docs.map((d) => ({
-              evidencia_id: evId,
-              user_id: user.id,
-              storage_path: d.path,
-              nome_arquivo: d.nome,
-              mime_type: d.mime,
-              tamanho_bytes: d.size,
-            })),
-          );
-        }
+        await uploadFiles(evId, newFotos, 'fotos');
+        await uploadFiles(evId, newDocs, 'documentos');
       }
       toast({ title: editing ? 'Evidência atualizada' : 'Evidência criada' });
       setFormOpen(false);
       await loadAll();
-    } catch (err: any) {
-      toast({ title: 'Erro ao salvar', description: err.message, variant: 'destructive' });
+    } catch (err) {
+      toast({ title: 'Erro ao salvar', description: mensagemDeErro(err), variant: 'destructive' });
     } finally {
       setSaving(false);
     }
@@ -260,16 +229,11 @@ export default function PdiEvidencias() {
 
   async function remove(e: Evidencia) {
     if (!confirm(`Apagar a evidência "${e.titulo}"? Esta ação não pode ser desfeita.`)) return;
-    // remove storage files
-    if (e.fotos?.length) {
-      await supabase.storage.from('pdi-fotos').remove(e.fotos.map((f) => f.storage_path));
-    }
-    if (e.documentos?.length) {
-      await supabase.storage.from('pdi-documentos').remove(e.documentos.map((d) => d.storage_path));
-    }
-    const { error } = await supabase.from('pdi_evidencias' as any).delete().eq('id', e.id);
-    if (error) {
-      toast({ title: 'Erro ao apagar', description: error.message, variant: 'destructive' });
+    try {
+      // As fotos e os documentos saem junto (banco e armazenamento).
+      await api.delete(`/pdi-evidencias/${e.id}`);
+    } catch (err) {
+      toast({ title: 'Erro ao apagar', description: mensagemDeErro(err), variant: 'destructive' });
       return;
     }
     toast({ title: 'Evidência apagada' });
@@ -279,16 +243,24 @@ export default function PdiEvidencias() {
   async function removeFoto(foto: Foto) {
     if (!editing) return;
     if (!confirm('Remover esta foto?')) return;
-    await supabase.storage.from('pdi-fotos').remove([foto.storage_path]);
-    await supabase.from('pdi_evidencia_fotos' as any).delete().eq('id', foto.id);
+    try {
+      await api.delete(`/pdi-evidencias/${editing.id}/fotos/${foto.id}`);
+    } catch (err) {
+      toast({ title: 'Erro ao remover', description: mensagemDeErro(err), variant: 'destructive' });
+      return;
+    }
     setEditing({ ...editing, fotos: editing.fotos?.filter((f) => f.id !== foto.id) });
   }
 
   async function removeDoc(doc: Documento) {
     if (!editing) return;
     if (!confirm('Remover este documento?')) return;
-    await supabase.storage.from('pdi-documentos').remove([doc.storage_path]);
-    await supabase.from('pdi_evidencia_documentos' as any).delete().eq('id', doc.id);
+    try {
+      await api.delete(`/pdi-evidencias/${editing.id}/documentos/${doc.id}`);
+    } catch (err) {
+      toast({ title: 'Erro ao remover', description: mensagemDeErro(err), variant: 'destructive' });
+      return;
+    }
     setEditing({ ...editing, documentos: editing.documentos?.filter((d) => d.id !== doc.id) });
   }
 

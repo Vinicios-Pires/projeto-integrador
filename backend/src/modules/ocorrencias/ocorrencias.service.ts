@@ -135,10 +135,13 @@ const toEscolar = (o: ocorrencias_escolares): EscolarRow => ({ ...o, data: dia(o
  * O professor vê as que registrou; a gestão, todas. Filtros: situação, tipo, professor, período e
  * `aluno` (parte do nome, sem diferenciar maiúsculas).
  */
+/** Na lista, vêm também os nomes de quem registrou e de quem respondeu (o professor não lê a lista de usuários). */
+export type EscolarComNomes = EscolarRow & { professor_nome: string | null; gestao_nome: string | null };
+
 export async function listEscolares(
   auth: SessionUser,
   f: { status?: string; tipo?: string; user_id?: string; aluno?: string; de?: string; ate?: string },
-): Promise<EscolarRow[]> {
+): Promise<EscolarComNomes[]> {
   const [user_id] = listaDeIds(f.user_id, 'user_id', 1);
   if (f.status !== undefined && !STATUS_ESCOLAR.includes(f.status)) throw invalido('"status" inválido.');
   const lista = await prisma.ocorrencias_escolares.findMany({
@@ -150,8 +153,16 @@ export async function listEscolares(
       ...periodo('data', f.de, f.ate),
     },
     orderBy: { created_at: 'desc' },
+    include: {
+      usuario: { select: { profile: { select: { nome: true } } } },
+      gestao: { select: { profile: { select: { nome: true } } } },
+    },
   });
-  return lista.map(toEscolar);
+  return lista.map(({ usuario, gestao, ...o }) => ({
+    ...toEscolar(o),
+    professor_nome: usuario.profile?.nome ?? null,
+    gestao_nome: gestao?.profile?.nome ?? null,
+  }));
 }
 
 async function buscarEscolar(auth: SessionUser, id: string) {

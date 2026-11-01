@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { supabase } from '@/lib/supabase';
+import { api, linksDosArquivos, mensagemDeErro } from '@/lib/api';
 import { Plus, Edit2, Trash2, Search, Camera, Image as ImageIcon, X, ZoomIn, FileText, Download, Eye } from 'lucide-react';
 import { PageHeader, FilterBar, TableContainer, LoadingSpinner } from '@/components/ui-escola';
 import { Button } from '@/components/ui/button';
@@ -59,23 +59,18 @@ export default function Ocorrencias() {
 
   async function loadData() {
     setLoading(true);
-    const [{ data: oc }, { data: t }, { data: f }] = await Promise.all([
-      supabase.from('ocorrencias_notebook').select('*, turmas(nome)').order('data_ocorrencia', { ascending: false }),
-      supabase.from('turmas').select('id, nome').order('nome'),
-      supabase.from('ocorrencia_fotos').select('*'),
+    // As mais recentes primeiro, cada uma com a turma e as fotos.
+    const [oc, t] = await Promise.all([
+      api.get<(typeof ocorrencias[number] & { fotos?: OcorrenciaFoto[] })[]>('/ocorrencias-notebook').catch(() => []),
+      api.get<typeof turmas>('/turmas').catch(() => []),
     ]);
-    setOcorrencias(oc || []);
-    setTurmas(t || []);
+    setOcorrencias(oc);
+    setTurmas(t);
     const fotoMap: Record<string, OcorrenciaFoto[]> = {};
-    // Gera signed URLs (bucket privado) e descarta a URL pública antiga.
-    const fotosArr = (f || []) as OcorrenciaFoto[];
+    // O bucket é privado: os links temporários saem do correio de arquivos, numa ida só.
+    const fotosArr = oc.flatMap(o => o.fotos ?? []);
     const paths = fotosArr.map(x => x.path).filter(Boolean);
-    const signedMap = new Map<string, string>();
-    if (paths.length > 0) {
-      const { data: signed } = await supabase.storage
-        .from('ocorrencias-fotos').createSignedUrls(paths, 60 * 60);
-      (signed || []).forEach((s: any) => { if (s?.path && s?.signedUrl) signedMap.set(s.path, s.signedUrl); });
-    }
+    const signedMap = paths.length > 0 ? await linksDosArquivos('ocorrencias-fotos', paths).catch(() => new Map<string, string>()) : new Map<string, string>();
     fotosArr.forEach((foto) => {
       if (foto.path && signedMap.has(foto.path)) foto.url = signedMap.get(foto.path)!;
       if (!fotoMap[foto.ocorrencia_id]) fotoMap[foto.ocorrencia_id] = [];
@@ -132,13 +127,12 @@ export default function Ocorrencias() {
   async function uploadPhotos(ocorrenciaId: string) {
     if (!userId) return;
     for (const file of pendingFiles) {
-      const ext = file.name.split('.').pop();
-      // Pasta começa pelo userId para casar com a policy de storage
-      const path = `${userId}/${ocorrenciaId}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-      const { error } = await supabase.storage.from('ocorrencias-fotos').upload(path, file);
-      if (error) { console.error('Upload error:', error); continue; }
-      // Bucket é privado: armazenamos apenas o path; URL é assinada na exibição.
-      await supabase.from('ocorrencia_fotos').insert({ ocorrencia_id: ocorrenciaId, url: '', path });
+      try {
+        // O backend guarda na pasta de quem registrou e anota a foto na ocorrência.
+        await api.post(`/ocorrencias-notebook/${ocorrenciaId}/fotos`, file, { nome: file.name });
+      } catch (err) {
+        toast({ title: `Foto não enviada: ${file.name}`, description: mensagemDeErro(err), variant: 'destructive' });
+      }
     }
   }
 
@@ -147,13 +141,18 @@ export default function Ocorrencias() {
     setSaving(true);
     const payload = { ...form, turma_id: form.turma_id || null };
     let ocId = editing?.id;
-    if (editing) {
-      await supabase.from('ocorrencias_notebook').update(payload).eq('id', editing.id);
-      toast({ title: 'Ocorrência atualizada!' });
-    } else {
-      const { data } = await (supabase as any).from('ocorrencias_notebook').insert({ ...payload, user_id: userId }).select('id').single();
-      ocId = data?.id;
-      toast({ title: 'Ocorrência registrada!' });
+    try {
+      if (editing) {
+        await api.patch(`/ocorrencias-notebook/${editing.id}`, payload);
+        toast({ title: 'Ocorrência atualizada!' });
+      } else {
+        ocId = (await api.post<{ id: string }>('/ocorrencias-notebook', payload)).id;
+        toast({ title: 'Ocorrência registrada!' });
+      }
+    } catch (err) {
+      setSaving(false);
+      toast({ title: 'Erro ao salvar', description: mensagemDeErro(err), variant: 'destructive' });
+      return;
     }
     if (ocId && pendingFiles.length > 0) {
       await uploadPhotos(ocId);
@@ -164,20 +163,25 @@ export default function Ocorrencias() {
   }
 
   async function removePhoto(foto: OcorrenciaFoto) {
-    await supabase.storage.from('ocorrencias-fotos').remove([foto.path]);
-    await supabase.from('ocorrencia_fotos').delete().eq('id', foto.id);
+    try {
+      // Apaga o registro e o arquivo.
+      await api.delete(`/ocorrencias-notebook/${foto.ocorrencia_id}/fotos/${foto.id}`);
+    } catch (err) {
+      toast({ title: 'Erro ao remover a foto', description: mensagemDeErro(err), variant: 'destructive' });
+      return;
+    }
     loadData();
     toast({ title: 'Foto removida' });
   }
 
   async function remove(id: string) {
     if (!confirm('Excluir esta ocorrência?')) return;
-    // Delete associated photos from storage
-    const ocFotos = fotos[id] || [];
-    if (ocFotos.length > 0) {
-      await supabase.storage.from('ocorrencias-fotos').remove(ocFotos.map(f => f.path));
+    try {
+      // As fotos saem junto (banco e armazenamento).
+      await api.delete(`/ocorrencias-notebook/${id}`);
+    } catch (err) {
+      toast({ title: 'Erro ao excluir', description: mensagemDeErro(err), variant: 'destructive' });
     }
-    await supabase.from('ocorrencias_notebook').delete().eq('id', id);
     loadData();
   }
 
