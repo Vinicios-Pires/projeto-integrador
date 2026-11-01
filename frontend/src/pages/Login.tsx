@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+import { mensagemDeErro } from '@/lib/api';
 import { LogIn, UserPlus, KeyRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,16 +17,18 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
+  const { signIn } = useAuth();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email: email.toLowerCase().trim(), password });
-    setLoading(false);
-    if (error) {
-      toast({ title: 'Erro ao entrar', description: error.message, variant: 'destructive' });
-    } else {
+    try {
+      await signIn(email.toLowerCase().trim(), password);
       navigate('/');
+    } catch (err) {
+      toast({ title: 'Erro ao entrar', description: mensagemDeErro(err), variant: 'destructive' });
+    } finally {
+      setLoading(false);
     }
   };
 

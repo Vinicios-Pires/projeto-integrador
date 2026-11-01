@@ -35,6 +35,11 @@ export const env = {
   LOGIN_MAX_TENTATIVAS: positiveInt('LOGIN_MAX_TENTATIVAS', 10),
   /** Cadastros por IP a cada hora. */
   CADASTRO_MAX_POR_HORA: positiveInt('CADASTRO_MAX_POR_HORA', 5),
+  /** Endereços do frontend que podem chamar a API pelo navegador (separados por vírgula). */
+  CORS_ORIGINS: (process.env.CORS_ORIGINS?.trim() || 'http://localhost:8080')
+    .split(',')
+    .map((o) => o.trim().replace(/\/$/, ''))
+    .filter(Boolean),
   /** Onde os arquivos ficam: `local` (pasta no disco, para dev e testes) ou `supabase` (Storage). */
   STORAGE_DRIVER: storageDriver(),
   /** Pasta dos arquivos quando `STORAGE_DRIVER=local`. */

@@ -21,11 +21,14 @@ import { pdiRouter } from './modules/pdi/pdi.routes';
 import { tutoriaRouter } from './modules/tutoria/tutoria.routes';
 import { replicabilidadeRouter } from './modules/replicabilidade/replicabilidade.routes';
 import { errorHandler, notFound } from './middlewares/error-handler';
+import { cors } from './middlewares/cors';
 
 export const app = express();
 
 // Atrás de proxy (Render), para o req.ip — e o limite de tentativas — usar o IP real.
 app.set('trust proxy', env.TRUST_PROXY);
+
+app.use(cors);
 
 // 1 MB cabe a importação da planilha de alunos (até 2000 linhas).
 app.use(express.json({ limit: '1mb' }));

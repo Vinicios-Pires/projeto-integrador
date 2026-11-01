@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
+import { api, mensagemDeErro } from '@/lib/api';
 import { School, UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,24 +28,18 @@ export default function Cadastro() {
       toast({ title: 'Domínio não permitido', description: `Apenas e-mails ${ALLOWED_DOMAIN} podem se cadastrar.`, variant: 'destructive' });
       return;
     }
-    if (password.length < 6) {
-      toast({ title: 'Senha fraca', description: 'A senha deve ter pelo menos 6 caracteres.', variant: 'destructive' });
+    if (password.length < 8) {
+      toast({ title: 'Senha fraca', description: 'A senha deve ter pelo menos 8 caracteres.', variant: 'destructive' });
       return;
     }
     setLoading(true);
-    const { error } = await supabase.auth.signUp({
-      email: email.toLowerCase().trim(),
-      password,
-      options: {
-        data: { nome },
-        emailRedirectTo: window.location.origin,
-      },
-    });
-    setLoading(false);
-    if (error) {
-      toast({ title: 'Erro no cadastro', description: error.message, variant: 'destructive' });
-    } else {
+    try {
+      await api.post('/auth/signup', { nome: nome.trim(), email: email.toLowerCase().trim(), senha: password });
       setSuccess(true);
+    } catch (err) {
+      toast({ title: 'Erro no cadastro', description: mensagemDeErro(err), variant: 'destructive' });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -59,7 +53,7 @@ export default function Cadastro() {
             </div>
             <CardTitle>Cadastro recebido</CardTitle>
             <CardDescription>
-              Enviamos um link de confirmação para <strong>{email}</strong>. Após confirmar, sua conta ficará <strong>aguardando aprovação</strong> do administrador antes de liberar o acesso.
+              A conta de <strong>{email}</strong> foi criada e está <strong>aguardando aprovação</strong> do administrador. Assim que for liberada, é só entrar com o e-mail e a senha que você escolheu.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -94,7 +88,7 @@ export default function Cadastro() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">Senha</Label>
-              <Input id="password" type="password" placeholder="Mínimo 6 caracteres" value={password} onChange={e => setPassword(e.target.value)} required minLength={6} />
+              <Input id="password" type="password" placeholder="Mínimo 8 caracteres" value={password} onChange={e => setPassword(e.target.value)} required minLength={8} maxLength={72} />
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
               <UserPlus className="w-4 h-4 mr-2" />

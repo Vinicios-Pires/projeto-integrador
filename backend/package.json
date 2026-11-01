@@ -40,7 +40,8 @@
     "test:ocorrencias": "tsx scripts/testar-ocorrencias.ts",
     "test:pdi": "tsx scripts/testar-pdi.ts",
     "test:tutoria": "tsx scripts/testar-tutoria.ts",
-    "test:replicabilidade": "tsx scripts/testar-replicabilidade.ts"
+    "test:replicabilidade": "tsx scripts/testar-replicabilidade.ts",
+    "test:tela-login": "tsx scripts/testar-tela-login.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

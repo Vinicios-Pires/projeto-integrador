@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { api, mensagemDeErro } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -7,7 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import { usePermissions } from '@/hooks/use-permissions';
-import { Shield, UserCheck, UserX, Search, Loader2 } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Shield, UserCheck, UserX, Search, Loader2, KeyRound, Copy } from 'lucide-react';
 
 type Status = 'pendente' | 'ativo' | 'inativo';
 type Role = 'professor' | 'coordenador' | 'vice_direcao' | 'direcao' | 'admin';
@@ -41,29 +42,18 @@ export default function GerenciarUsuarios() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [senhaTemporaria, setSenhaTemporaria] = useState<{ nome: string; senha: string } | null>(null);
 
   const load = async () => {
     setLoading(true);
-    const [profilesRes, rolesRes] = await Promise.all([
-      (supabase.from('profiles') as any).select('id, nome, email, status').order('created_at', { ascending: false }),
-      supabase.from('user_roles').select('user_id, role'),
-    ]);
-    if (profilesRes.error) {
-      toast({ title: 'Erro ao carregar usuários', description: profilesRes.error.message, variant: 'destructive' });
+    try {
+      // Já vem com o papel e os mais recentes primeiro.
+      setRows(await api.get<UsuarioRow[]>('/users'));
+    } catch (err) {
+      toast({ title: 'Erro ao carregar usuários', description: mensagemDeErro(err), variant: 'destructive' });
+    } finally {
       setLoading(false);
-      return;
     }
-    const rolesMap = new Map<string, Role>();
-    (rolesRes.data || []).forEach((r: any) => rolesMap.set(r.user_id, r.role));
-    const merged: UsuarioRow[] = (profilesRes.data || []).map((p: any) => ({
-      id: p.id,
-      nome: p.nome,
-      email: p.email,
-      status: (p.status || 'pendente') as Status,
-      role: rolesMap.get(p.id) || null,
-    }));
-    setRows(merged);
-    setLoading(false);
   };
 
   useEffect(() => { if (isAdmin) load(); }, [isAdmin]);
@@ -80,33 +70,41 @@ export default function GerenciarUsuarios() {
 
   const updateRole = async (userId: string, role: Role) => {
     setSavingId(userId);
-    // upsert: apaga papel atual e insere novo
-    const del = await supabase.from('user_roles').delete().eq('user_id', userId);
-    if (del.error) {
-      toast({ title: 'Erro', description: del.error.message, variant: 'destructive' });
-      setSavingId(null);
-      return;
-    }
-    const ins = await supabase.from('user_roles').insert({ user_id: userId, role });
-    if (ins.error) {
-      toast({ title: 'Erro ao atribuir função', description: ins.error.message, variant: 'destructive' });
-    } else {
+    try {
+      await api.patch(`/users/${userId}/role`, { role });
       toast({ title: 'Função atualizada', description: ROLE_LABEL[role] });
       setRows(r => r.map(x => x.id === userId ? { ...x, role } : x));
+    } catch (err) {
+      toast({ title: 'Erro ao atribuir função', description: mensagemDeErro(err), variant: 'destructive' });
+    } finally {
+      setSavingId(null);
     }
-    setSavingId(null);
   };
 
   const updateStatus = async (userId: string, status: Status) => {
     setSavingId(userId);
-    const { error } = await (supabase.from('profiles') as any).update({ status }).eq('id', userId);
-    if (error) {
-      toast({ title: 'Erro ao atualizar status', description: error.message, variant: 'destructive' });
-    } else {
+    try {
+      await api.patch(`/users/${userId}/status`, { status });
       toast({ title: 'Status atualizado' });
       setRows(r => r.map(x => x.id === userId ? { ...x, status } : x));
+    } catch (err) {
+      toast({ title: 'Erro ao atualizar status', description: mensagemDeErro(err), variant: 'destructive' });
+    } finally {
+      setSavingId(null);
     }
-    setSavingId(null);
+  };
+
+  const resetarSenha = async (u: UsuarioRow) => {
+    if (!window.confirm(`Gerar uma senha temporária para ${u.nome || u.email}? A senha atual deixa de valer.`)) return;
+    setSavingId(u.id);
+    try {
+      const res = await api.post<{ senha_temporaria: string }>(`/users/${u.id}/reset-password`);
+      setSenhaTemporaria({ nome: u.nome || u.email || '', senha: res.senha_temporaria });
+    } catch (err) {
+      toast({ title: 'Erro ao resetar a senha', description: mensagemDeErro(err), variant: 'destructive' });
+    } finally {
+      setSavingId(null);
+    }
   };
 
   const aprovar = async (u: UsuarioRow) => {
@@ -154,6 +152,11 @@ export default function GerenciarUsuarios() {
             <UserX className="w-4 h-4 mr-1" /> Inativar
           </Button>
         )}
+        {u.status === 'ativo' && (
+          <Button size="sm" variant="ghost" onClick={() => resetarSenha(u)} disabled={savingId === u.id} title="Gerar senha temporária">
+            <KeyRound className="w-4 h-4 mr-1" /> Resetar senha
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -199,6 +202,32 @@ export default function GerenciarUsuarios() {
           )}
         </>
       )}
+
+      <Dialog open={!!senhaTemporaria} onOpenChange={(aberto) => !aberto && setSenhaTemporaria(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Senha temporária</DialogTitle>
+            <DialogDescription>
+              Passe esta senha para <strong>{senhaTemporaria?.nome}</strong>. Ela aparece só agora; no próximo acesso,
+              o sistema pede para criar uma senha nova.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 rounded-md bg-muted px-3 py-2 text-lg font-mono tracking-wide select-all">{senhaTemporaria?.senha}</code>
+            <Button
+              variant="outline"
+              size="icon"
+              title="Copiar"
+              onClick={() => navigator.clipboard?.writeText(senhaTemporaria?.senha ?? '').then(() => toast({ title: 'Senha copiada' }))}
+            >
+              <Copy className="w-4 h-4" />
+            </Button>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setSenhaTemporaria(null)}>Pronto</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

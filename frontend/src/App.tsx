@@ -47,21 +47,28 @@ function Layout({ children }: { children: React.ReactNode }) {
   );
 }
 
+function Carregando() {
+  return (
+    <div className="flex items-center justify-center h-screen bg-background">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+    </div>
+  );
+}
+
 function ProtectedRoutes() {
-  const { session, loading } = useAuth();
+  const { session, loading, deveTrocarSenha } = useAuth();
   const { isGestao, isAdmin } = usePermissions();
   const { profile, role } = useAuth();
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen bg-background">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-      </div>
-    );
-  }
+  if (loading) return <Carregando />;
 
   if (!session) {
     return <Navigate to="/login" replace />;
+  }
+
+  // Senha temporária (criada pelo admin): o backend recusa as outras rotas até a troca.
+  if (deveTrocarSenha) {
+    return <RedefinirSenha obrigatoria />;
   }
 
   // Bloqueia acesso de usuários pendentes/inativos ou sem papel atribuído
@@ -97,6 +104,14 @@ function ProtectedRoutes() {
   );
 }
 
+/** Telas de tela cheia (fora do menu) que exigem login. */
+function LoggedInRoute({ children }: { children: React.ReactNode }) {
+  const { session, loading } = useAuth();
+  if (loading) return <Carregando />;
+  if (!session) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+}
+
 function PublicRoute({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth();
   if (loading) return null;
@@ -113,7 +128,7 @@ const App = () => (
           <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
           <Route path="/cadastro" element={<PublicRoute><Cadastro /></PublicRoute>} />
           <Route path="/recuperar-senha" element={<PublicRoute><RecuperarSenha /></PublicRoute>} />
-          <Route path="/redefinir-senha" element={<RedefinirSenha />} />
+          <Route path="/redefinir-senha" element={<LoggedInRoute><RedefinirSenha /></LoggedInRoute>} />
           <Route path="/*" element={<ProtectedRoutes />} />
         </Routes>
       </AuthProvider>
