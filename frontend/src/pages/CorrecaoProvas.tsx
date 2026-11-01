@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { api, mensagemDeErro } from '@/lib/api';
 import { Plus, QrCode, ScanLine, Download, Printer, FileText, Eye } from 'lucide-react';
 import { PageHeader, LoadingSpinner } from '@/components/ui-escola';
 import { usePermissions } from '@/hooks/use-permissions';
@@ -42,33 +42,48 @@ export default function CorrecaoProvas() {
   useEffect(() => { if (selectedProva) loadProvaDetails(); }, [selectedProva]);
 
   async function loadData() {
-    const [{ data: p }, { data: t }, { data: d }] = await Promise.all([
-      supabase.from('provas').select('*, turmas(nome), disciplinas(nome)').order('created_at', { ascending: false }),
-      supabase.from('turmas').select('id, nome').order('nome'),
-      supabase.from('disciplinas').select('id, nome').order('nome'),
-    ]);
-    setProvas(p || []);
-    setTurmas(t || []);
-    setDisciplinas(d || []);
+    try {
+      // Provas já vêm das mais novas para as mais antigas, com turmas { nome } e disciplinas { nome }.
+      const [p, t, d] = await Promise.all([
+        api.get<typeof provas>('/provas'),
+        api.get<typeof turmas>('/turmas'),
+        api.get<typeof disciplinas>('/disciplinas'),
+      ]);
+      setProvas(p);
+      setTurmas(t);
+      setDisciplinas(d);
+      return p;
+    } catch (err) {
+      toast({ title: 'Erro ao carregar as provas', description: mensagemDeErro(err), variant: 'destructive' });
+      return [];
+    }
   }
 
   async function loadProvaDetails() {
     if (!selectedProva) return;
     setLoading(true);
-    const [{ data: gab }, { data: al }, { data: res }] = await Promise.all([
-      supabase.from('gabaritos').select('*').eq('prova_id', selectedProva.id).order('numero_questao'),
-      supabase.from('alunos').select('id, nome, numero_chamada').eq('turma_id', selectedProva.turma_id).eq('ativo', true).order('numero_chamada'),
-      supabase.from('resultados_prova').select('*').eq('prova_id', selectedProva.id),
-    ]);
-    setGabarito(gab || []);
-    setAlunos(al || []);
+    type Resultado = { aluno_id: string; respostas: Record<number, string> | null };
+    let gab: typeof gabarito = [], al: typeof alunos = [], res: Resultado[] = [];
+    try {
+      [gab, al, res] = await Promise.all([
+        api.get<typeof gabarito>(`/provas/${selectedProva.id}/gabarito`),
+        selectedProva.turma_id
+          ? api.get<typeof alunos>('/alunos', { turma_id: selectedProva.turma_id, ativo: true, ordem: 'numero_chamada' })
+          : Promise.resolve([]),
+        api.get<Resultado[]>(`/provas/${selectedProva.id}/resultados`),
+      ]);
+    } catch (err) {
+      toast({ title: 'Erro ao carregar a prova', description: mensagemDeErro(err), variant: 'destructive' });
+    }
+    setGabarito(gab);
+    setAlunos(al);
     const gabMap: Record<number, string> = {};
-    (gab || []).forEach((g: any) => { gabMap[g.numero_questao] = g.resposta_correta; });
+    gab.forEach((g: any) => { gabMap[g.numero_questao] = g.resposta_correta; });
     setGabForm(gabMap);
-    const anuladasList: number[] = (gab || []).filter((g: any) => g.anulada).map((g: any) => g.numero_questao);
+    const anuladasList: number[] = gab.filter((g: any) => g.anulada).map((g: any) => g.numero_questao);
     setAnuladas(anuladasList);
     const resMap: Record<string, Record<number, string>> = {};
-    (res || []).forEach((r: any) => { resMap[r.aluno_id] = r.respostas || {}; });
+    res.forEach(r => { resMap[r.aluno_id] = r.respostas || {}; });
     setRespostas(resMap);
     setLoading(false);
   }
@@ -77,14 +92,18 @@ export default function CorrecaoProvas() {
     if (!selectedProva || !canEdit) return;
     const questoes = Array.from({ length: selectedProva.numero_questoes }, (_, i) => i + 1);
     const upserts = questoes.map(q => ({
-      prova_id: selectedProva.id,
       numero_questao: q,
       resposta_correta: gabForm[q] || 'A',
       anulada: anuladas.includes(q),
       peso: 1.0,
     }));
-    const { error } = await (supabase as any).from('gabaritos').upsert(upserts, { onConflict: 'prova_id,numero_questao' });
-    if (error) { toast({ title: 'Erro ao salvar', description: error.message, variant: 'destructive' }); return; }
+    try {
+      // O gabarito inteiro; o backend recalcula as notas já corrigidas.
+      await api.put(`/provas/${selectedProva.id}/gabarito`, { questoes: upserts });
+    } catch (err) {
+      toast({ title: 'Erro ao salvar', description: mensagemDeErro(err), variant: 'destructive' });
+      return;
+    }
     toast({ title: 'Gabarito salvo com sucesso!' });
     loadProvaDetails();
   }
@@ -92,35 +111,46 @@ export default function CorrecaoProvas() {
   async function criarProva() {
     if (!canEdit || !userId) return;
     setSaving(true);
-    const { data, error } = await supabase.from('provas').insert({
-      turma_id: formProva.turma_id || null,
-      disciplina_id: formProva.disciplina_id || null,
-      bimestre: formProva.bimestre,
-      titulo: formProva.titulo,
-      numero_questoes: formProva.numero_questoes,
-      data_aplicacao: formProva.data_aplicacao || null,
-      observacoes: formProva.observacoes || null,
-      user_id: userId,
-    }).select().single();
+    let data: { id: string };
+    try {
+      data = await api.post('/provas', {
+        turma_id: formProva.turma_id || null,
+        disciplina_id: formProva.disciplina_id || null,
+        bimestre: formProva.bimestre,
+        titulo: formProva.titulo,
+        numero_questoes: formProva.numero_questoes,
+        data_aplicacao: formProva.data_aplicacao || null,
+        observacoes: formProva.observacoes || null,
+        valor_total: formProva.valor_total || 10,
+        escola: formProva.escola || null,
+        professor: formProva.professor || null,
+      });
+    } catch (err) {
+      setSaving(false);
+      toast({ title: 'Erro ao criar prova', description: mensagemDeErro(err), variant: 'destructive' });
+      return;
+    }
     setSaving(false);
     setDialogProva(false);
-    if (error) { toast({ title: 'Erro ao criar prova', description: error.message, variant: 'destructive' }); return; }
-    if (data) {
-      await loadData();
-      setSelectedProva({ ...data, turmas: turmas.find(t => t.id === formProva.turma_id), disciplinas: disciplinas.find(d => d.id === formProva.disciplina_id) });
-    }
+    const lista = await loadData();
+    setSelectedProva(lista.find(p => p.id === data.id) ?? data);
     setFormProva({ ...DEFAULT_FORM });
     toast({ title: 'Prova criada!', description: 'Agora configure o gabarito e imprima as folhas.' });
   }
 
   async function salvarResultadoEscaneamento(alunoId: string, respostasAluno: Record<number, string>, nota: number, acertos: number) {
     if (!canEdit || !userId) return;
-    const { error } = await (supabase as any).from('resultados_prova').upsert(
-      { prova_id: selectedProva.id, aluno_id: alunoId, respostas: respostasAluno, acertos, nota, user_id: userId },
-      { onConflict: 'prova_id,aluno_id' }
-    );
-    if (error) { toast({ title: 'Erro ao salvar resultado', description: error.message, variant: 'destructive' }); return; }
-    toast({ title: `Nota ${nota.toFixed(1)} lançada!` });
+    let salvo: { nota: number } | undefined;
+    try {
+      // O backend confere com o gabarito e calcula acertos e nota (a mesma conta da tela).
+      [salvo] = await api.put<{ nota: number }[]>(`/provas/${selectedProva.id}/resultados`, {
+        resultados: [{ aluno_id: alunoId, respostas: respostasAluno }],
+      });
+    } catch (err) {
+      toast({ title: 'Erro ao salvar resultado', description: mensagemDeErro(err), variant: 'destructive' });
+      return;
+    }
+    toast({ title: `Nota ${Number(salvo?.nota ?? nota).toFixed(1)} lançada!` });
     setRespostas(r => ({ ...r, [alunoId]: respostasAluno }));
   }
 

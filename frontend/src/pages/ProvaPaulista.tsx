@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { api, buscarEmLotes, mensagemDeErro } from '@/lib/api';
+import { useToast } from '@/hooks/use-toast';
 import { PageHeader, StatCard } from '@/components/ui-escola';
 import { usePermissions } from '@/hooks/use-permissions';
 import {
@@ -51,6 +52,7 @@ function Card({ title, icon, children, className, action }: {
 
 export default function ProvaPaulista() {
   const { isGestao } = usePermissions();
+  const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [tipos, setTipos] = useState<TipoRow[]>([]);
   const [notas, setNotas] = useState<NotaRow[]>([]);
@@ -69,43 +71,39 @@ export default function ProvaPaulista() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data: tiposData } = await (supabase as any).from('tipos_avaliacao')
-      .select('id, nome, bimestre, turma_id, disciplina_id, user_id, categoria')
-      .eq('categoria', 'prova_paulista');
-    const tiposArr: TipoRow[] = (tiposData || []) as TipoRow[];
-    setTipos(tiposArr);
+    try {
+      const tiposArr = (await api.get<TipoRow[]>('/tipos-avaliacao')).filter(t => t.categoria === 'prova_paulista');
+      setTipos(tiposArr);
 
-    if (tiposArr.length === 0) {
-      setNotas([]); setAlunos([]); setTurmas([]); setDisciplinas([]); setProfessores([]);
-      setLoading(false); return;
+      if (tiposArr.length === 0) {
+        setNotas([]); setAlunos([]); setTurmas([]); setDisciplinas([]); setProfessores([]);
+        setLoading(false); return;
+      }
+      const tipoIds = tiposArr.map(t => t.id);
+      const turmaIds = new Set(tiposArr.map(t => t.turma_id).filter(Boolean));
+      const discIds = new Set(tiposArr.map(t => t.disciplina_id).filter(Boolean));
+      const userIds = new Set(tiposArr.map(t => t.user_id).filter(Boolean));
+
+      const [notasData, alunosData, turmasData, discData, profData] = await Promise.all([
+        buscarEmLotes(tipoIds, lote => api.get<NotaRow[]>('/notas', { tipo_avaliacao_id: lote })),
+        buscarEmLotes([...turmaIds], lote => api.get<Aluno[]>('/alunos', { turma_id: lote, ativo: true, ordem: 'numero_chamada' })),
+        api.get<Turma[]>('/turmas').then(l => l.filter(t => turmaIds.has(t.id))),
+        api.get<Disciplina[]>('/disciplinas').then(l => l.filter(d => discIds.has(d.id))),
+        // A lista de professores é da gestão (para o filtro "Professor").
+        isGestao && userIds.size
+          ? api.get<Profile[]>('/users').then(l => l.filter(u => userIds.has(u.id)))
+          : Promise.resolve([] as Profile[]),
+      ]);
+      setNotas(notasData);
+      setAlunos(alunosData);
+      setTurmas(turmasData);
+      setDisciplinas(discData);
+      setProfessores(profData);
+    } catch (err) {
+      toast({ title: 'Erro ao carregar a Prova Paulista', description: mensagemDeErro(err), variant: 'destructive' });
     }
-    const tipoIds = tiposArr.map(t => t.id);
-    const turmaIds = Array.from(new Set(tiposArr.map(t => t.turma_id).filter(Boolean)));
-    const discIds = Array.from(new Set(tiposArr.map(t => t.disciplina_id).filter(Boolean)));
-    const userIds = Array.from(new Set(tiposArr.map(t => t.user_id).filter(Boolean)));
-
-    const [
-      { data: notasData },
-      { data: alunosData },
-      { data: turmasData },
-      { data: discData },
-      { data: profData },
-    ] = await Promise.all([
-      supabase.from('notas').select('aluno_id, tipo_avaliacao_id, nota, bimestre, user_id').in('tipo_avaliacao_id', tipoIds),
-      supabase.from('alunos').select('id, nome, turma_id, numero_chamada, serie').in('turma_id', turmaIds.length ? turmaIds : ['00000000-0000-0000-0000-000000000000']).eq('ativo', true).order('numero_chamada'),
-      supabase.from('turmas').select('id, nome, serie').in('id', turmaIds.length ? turmaIds : ['00000000-0000-0000-0000-000000000000']),
-      supabase.from('disciplinas').select('id, nome, cor').in('id', discIds.length ? discIds : ['00000000-0000-0000-0000-000000000000']),
-      isGestao && userIds.length
-        ? supabase.from('profiles').select('id, nome, email').in('id', userIds)
-        : Promise.resolve({ data: [] as Profile[] }),
-    ]);
-    setNotas((notasData || []) as NotaRow[]);
-    setAlunos((alunosData || []) as Aluno[]);
-    setTurmas((turmasData || []) as Turma[]);
-    setDisciplinas((discData || []) as Disciplina[]);
-    setProfessores((profData || []) as Profile[]);
     setLoading(false);
-  }, [isGestao]);
+  }, [isGestao, toast]);
 
   useEffect(() => { load(); }, [load]);
 

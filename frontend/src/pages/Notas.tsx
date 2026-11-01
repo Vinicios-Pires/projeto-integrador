@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, KeyboardEvent, ClipboardEvent } from 'react';
-import { supabase } from '@/lib/supabase';
+import { api, mensagemDeErro } from '@/lib/api';
 import { Plus, Trash2, Download, AlertCircle, FileSpreadsheet, Pencil, ChevronLeft, ChevronRight, Check, Clipboard, Info, Eye, Settings, RotateCcw } from 'lucide-react';
 import { PageHeader, FilterBar, BadgeSituacao, LoadingSpinner } from '@/components/ui-escola';
 import { Button } from '@/components/ui/button';
@@ -385,28 +385,22 @@ export default function Notas() {
   async function loadTurmas() {
     if (readOnly) {
       // Gestão vê todas as turmas
-      const { data: t } = await supabase.from('turmas').select('id, nome, serie, tipo').order('nome');
-      setTurmas(t || []);
-      if (t?.length && !filterTurma) setFilterTurma(t[0].id);
+      const t = await api.get<typeof turmas>('/turmas').catch(() => []);
+      setTurmas(t);
+      if (t.length && !filterTurma) setFilterTurma(t[0].id);
       return;
     }
     // Professor: apenas turmas em que tem matéria vinculada
-    const { data: vinculos } = await supabase
-      .from('turma_disciplinas')
-      .select('turma_id, turmas:turma_id(id, nome, serie, tipo)')
-      .eq('user_id', userId!);
+    const [vinculos, minhasTurmas] = await Promise.all([
+      api.get<{ turmas: unknown }[]>('/turma-disciplinas', { user_id: userId }).catch(() => []),
+      api.get<typeof turmas>('/turmas').catch(() => []),
+    ]);
     const turmasUnicas = new Map<string, any>();
-    (vinculos || []).forEach((v: any) => {
-      if (v.turmas) turmasUnicas.set(v.turmas.id, v.turmas);
+    vinculos.forEach(v => {
+      if (v.turmas) turmasUnicas.set((v.turmas as { id: string }).id, v.turmas);
     });
-    // Inclui também turmas personalizadas criadas pelo professor (via membros)
-    const { data: meusMembros } = await (supabase as any)
-      .from('turma_membros')
-      .select('turma_id, turmas:turma_id(id, nome, serie, tipo)')
-      .eq('user_id', userId!);
-    (meusMembros || []).forEach((v: any) => {
-      if (v.turmas) turmasUnicas.set(v.turmas.id, v.turmas);
-    });
+    // Inclui também as turmas personalizadas (eletivas) do professor
+    minhasTurmas.filter(t => t.tipo === 'personalizada').forEach(t => turmasUnicas.set(t.id, t));
     const lista = Array.from(turmasUnicas.values()).sort((a, b) => a.nome.localeCompare(b.nome));
     setTurmas(lista);
     if (lista.length && !filterTurma) setFilterTurma(lista[0].id);
@@ -415,17 +409,12 @@ export default function Notas() {
 
   async function loadDisciplinasDaTurma() {
     // Busca apenas as disciplinas vinculadas à turma selecionada para o professor logado
-    let query = supabase
-      .from('turma_disciplinas')
-      .select('disciplina_id, disciplinas:disciplina_id(id, nome, cor, user_id)')
-      .eq('turma_id', filterTurma);
-
     // Professor: filtrar pelo seu user_id. Gestão: ver todos.
-    if (!readOnly) query = query.eq('user_id', userId!);
-
-    const { data } = await query;
+    const data = await api
+      .get<{ disciplinas: { id: string } | null }[]>('/turma-disciplinas', { turma_id: filterTurma, user_id: readOnly ? undefined : userId })
+      .catch(() => []);
     const disciplinasUnicas = new Map<string, any>();
-    (data || []).forEach((v: any) => {
+    data.forEach(v => {
       if (v.disciplinas) disciplinasUnicas.set(v.disciplinas.id, v.disciplinas);
     });
     const lista = Array.from(disciplinasUnicas.values()).sort((a, b) => a.nome.localeCompare(b.nome));
@@ -442,49 +431,41 @@ export default function Notas() {
     setFocusCell(null);
     const turmaSel = turmas.find((t: any) => t.id === filterTurma);
     const isPersonalizada = (turmaSel as any)?.tipo === 'personalizada';
-    const tiposPromise = supabase.from('tipos_avaliacao').select('*')
-      .eq('turma_id', filterTurma).eq('disciplina_id', filterDisciplina)
-      .eq('bimestre', parseInt(filterBimestre)).order('ordem');
-    let alunosPromise;
-    if (isPersonalizada) {
-      alunosPromise = (supabase as any).from('turma_membros')
-        .select('alunos:aluno_id(id, nome, numero_chamada, ativo)')
-        .eq('turma_id', filterTurma)
-        .then((res: any) => ({
-          data: (res.data || [])
+    const bimestre = parseInt(filterBimestre);
+    let tiposArr: TipoAvaliacao[];
+    let alunos: { id: string; nome: string; numero_chamada: number }[];
+    let notasAll: any[] = [];
+    let arredondadas: any[] = [];
+    try {
+      const tiposPromise = api.get<TipoAvaliacao[]>('/tipos-avaliacao', { turma_id: filterTurma, disciplina_id: filterDisciplina, bimestre });
+      const alunosPromise = isPersonalizada
+        ? api.get<any[]>(`/turmas/${filterTurma}/membros`, { ativo: true }).then(membros => membros
             .map((m: any) => m.alunos)
             .filter((a: any) => a && a.ativo)
-            .sort((a: any, b: any) => (a.numero_chamada || 0) - (b.numero_chamada || 0)),
-        }));
-    } else {
-      alunosPromise = supabase.from('alunos').select('id, nome, numero_chamada')
-        .eq('turma_id', filterTurma).eq('ativo', true).order('numero_chamada');
+            .sort((a: any, b: any) => (a.numero_chamada || 0) - (b.numero_chamada || 0)))
+        : api.get<any[]>('/alunos', { turma_id: filterTurma, ativo: true, ordem: 'numero_chamada' });
+      [tiposArr, alunos] = await Promise.all([tiposPromise, alunosPromise]);
+      setTiposAvaliacao(tiposArr);
+      if (!alunos.length) { setAlunosNotas([]); setLoading(false); return; }
+      [notasAll, arredondadas] = await Promise.all([
+        tiposArr.length ? api.get<any[]>('/notas', { bimestre, tipo_avaliacao_id: tiposArr.map(t => t.id) }) : Promise.resolve([]),
+        // Notas arredondadas manuais salvas
+        api.get<any[]>('/medias-arredondadas', { turma_id: filterTurma, disciplina_id: filterDisciplina, bimestre }),
+      ]);
+    } catch (err) {
+      toast({ title: 'Erro ao carregar as notas', description: mensagemDeErro(err), variant: 'destructive' });
+      setLoading(false);
+      return;
     }
-    const [{ data: tipos }, { data: alunos }] = await Promise.all([tiposPromise, alunosPromise]);
-    const tiposArr: TipoAvaliacao[] = tipos || [];
-    setTiposAvaliacao(tiposArr);
-    if (!alunos?.length) { setAlunosNotas([]); setLoading(false); return; }
-
-    const { data: notasAll } = await supabase.from('notas').select('*')
-      .eq('bimestre', parseInt(filterBimestre))
-      .in('aluno_id', alunos.map(a => a.id))
-      .in('tipo_avaliacao_id', tiposArr.map(t => t.id));
 
     const notasMap: Record<string, Record<string, number | null>> = {};
     alunos.forEach(a => { notasMap[a.id] = {}; });
-    (notasAll || []).forEach((n: any) => {
+    notasAll.forEach((n: any) => {
       if (notasMap[n.aluno_id]) notasMap[n.aluno_id][n.tipo_avaliacao_id] = n.nota;
     });
 
-    // Buscar notas arredondadas manuais salvas
-    const { data: arredondadas } = await (supabase as any).from('medias_arredondadas').select('*')
-      .eq('turma_id', filterTurma)
-      .eq('disciplina_id', filterDisciplina)
-      .eq('bimestre', parseInt(filterBimestre))
-      .in('aluno_id', alunos.map(a => a.id));
-
     const arredMap: Record<string, { nota: number; manual: boolean }> = {};
-    (arredondadas || []).forEach((r: any) => {
+    arredondadas.forEach((r: any) => {
       arredMap[r.aluno_id] = { nota: Number(r.nota_arredondada), manual: !!r.manual };
     });
 
@@ -506,20 +487,28 @@ export default function Notas() {
     setLoading(false);
   }
 
-  const persistNota = useCallback(async (alunoId: string, tipoId: string, nota: number | null) => {
-    if (!canEdit || !userId) return;
-    const key = `${alunoId}-${tipoId}`;
-    setSaving(s => ({ ...s, [key]: true }));
-    if (nota === null) {
-      await supabase.from('notas').delete().eq('aluno_id', alunoId).eq('tipo_avaliacao_id', tipoId);
-    } else {
-      await (supabase as any).from('notas').upsert(
-        { aluno_id: alunoId, tipo_avaliacao_id: tipoId, nota, bimestre: parseInt(filterBimestre), user_id: userId },
-        { onConflict: 'aluno_id,tipo_avaliacao_id' }
-      );
+  /** Grava várias notas num pedido só (tudo ou nada); `nota: null` apaga. */
+  const persistNotas = useCallback(async (itens: { alunoId: string; tipoId: string; nota: number | null }[]) => {
+    if (!canEdit || !userId || !itens.length) return;
+    const marcar = (valor: boolean) => setSaving(s => {
+      const next = { ...s };
+      itens.forEach(i => { next[`${i.alunoId}-${i.tipoId}`] = valor; });
+      return next;
+    });
+    marcar(true);
+    try {
+      await api.put('/notas', { notas: itens.map(i => ({ aluno_id: i.alunoId, tipo_avaliacao_id: i.tipoId, nota: i.nota })) });
+    } catch (err) {
+      toast({ title: 'Nota não salva', description: mensagemDeErro(err), variant: 'destructive' });
+    } finally {
+      marcar(false);
     }
-    setSaving(s => ({ ...s, [key]: false }));
-  }, [filterBimestre, canEdit, userId]);
+  }, [canEdit, userId, toast]);
+
+  const persistNota = useCallback(
+    (alunoId: string, tipoId: string, nota: number | null) => persistNotas([{ alunoId, tipoId, nota }]),
+    [persistNotas],
+  );
 
   const handleCellChange = useCallback((rowIdx: number, colIdx: number, rawValue: string) => {
     const nota = parseNota(rawValue);
@@ -652,12 +641,12 @@ export default function Notas() {
       return copy;
     });
 
-    // Persist all
-    updates.forEach(({ rowIdx, colIdx, nota }) => {
+    // Persist all (num pedido só)
+    persistNotas(updates.flatMap(({ rowIdx, colIdx, nota }) => {
       const aluno = alunosRef.current[rowIdx];
       const tipo = tiposRef.current[colIdx];
-      if (aluno && tipo) persistNota(aluno.id, tipo.id, nota);
-    });
+      return aluno && tipo ? [{ alunoId: aluno.id, tipoId: tipo.id, nota }] : [];
+    }));
 
     setPasteCount(count);
     // Aviso de quantidade copiada x alunos visíveis (apenas para coluna única)
@@ -678,7 +667,7 @@ export default function Notas() {
       title: `${count} nota(s) colada(s) com sucesso!`,
       description: (sobrescritas > 0 ? `${sobrescritas} nota(s) substituída(s).` : 'Notas distribuídas em ordem.') + aviso,
     });
-  }, [persistNota, toast]);
+  }, [persistNotas, toast]);
 
   async function adicionarTipoAvaliacao() {
     if (!formTipo.nome.trim() || !canEdit || !userId) return;
@@ -687,12 +676,16 @@ export default function Notas() {
       toast({ title: 'Peso inválido', description: 'Digite um número (ex: 1, 2, 0,5) ou porcentagem (25%).', variant: 'destructive' });
       return;
     }
-    await (supabase as any).from('tipos_avaliacao').insert({
-      nome: formTipo.nome.trim(), peso, bimestre: parseInt(filterBimestre),
-      disciplina_id: filterDisciplina, turma_id: filterTurma, ordem: tiposAvaliacao.length + 1,
-      user_id: userId,
-      categoria: formTipo.provaPaulista ? 'prova_paulista' : 'normal',
-    });
+    try {
+      await api.post('/tipos-avaliacao', {
+        nome: formTipo.nome.trim(), peso, bimestre: parseInt(filterBimestre),
+        disciplina_id: filterDisciplina, turma_id: filterTurma, ordem: tiposAvaliacao.length + 1,
+        categoria: formTipo.provaPaulista ? 'prova_paulista' : 'normal',
+      });
+    } catch (err) {
+      toast({ title: 'Erro ao adicionar a avaliação', description: mensagemDeErro(err), variant: 'destructive' });
+      return;
+    }
     setDialogTipo(false);
     setFormTipo({ nome: '', pesoStr: '1', provaPaulista: false });
     loadNotas();
@@ -701,7 +694,12 @@ export default function Notas() {
 
   async function atualizarTipo(id: string, nome: string, peso: number, provaPaulista: boolean) {
     const categoria = provaPaulista ? 'prova_paulista' : 'normal';
-    await (supabase as any).from('tipos_avaliacao').update({ nome, peso, categoria }).eq('id', id);
+    try {
+      await api.patch(`/tipos-avaliacao/${id}`, { nome, peso, categoria });
+    } catch (err) {
+      toast({ title: 'Erro ao atualizar a avaliação', description: mensagemDeErro(err), variant: 'destructive' });
+      return;
+    }
     setTiposAvaliacao(prev => {
       const updated = prev.map(t => t.id === id ? { ...t, nome, peso, categoria } as any : t);
       setAlunosNotas(old => recalcularAlunos(old, updated, roundingMode));
@@ -719,34 +717,37 @@ export default function Notas() {
     [copy[idx], copy[newIdx]] = [copy[newIdx], copy[idx]];
     const updates = copy.map((t, i) => ({ ...t, ordem: i + 1 }));
     setTiposAvaliacao(updates);
-    await Promise.all(updates.map(t => supabase.from('tipos_avaliacao').update({ ordem: t.ordem }).eq('id', t.id)));
+    try {
+      await api.put('/tipos-avaliacao/ordem', { ids: updates.map(t => t.id) });
+    } catch (err) {
+      toast({ title: 'Erro ao reordenar', description: mensagemDeErro(err), variant: 'destructive' });
+      loadNotas();
+    }
   }
 
   async function removerTipo(id: string) {
     if (!confirm('Remover esta avaliação? As notas serão excluídas.')) return;
-    await supabase.from('tipos_avaliacao').delete().eq('id', id);
+    try {
+      await api.delete(`/tipos-avaliacao/${id}`);
+    } catch (err) {
+      toast({ title: 'Erro ao remover a avaliação', description: mensagemDeErro(err), variant: 'destructive' });
+    }
     loadNotas();
   }
 
   /** Persiste nota arredondada manual no banco. Se nota === null, remove (volta ao automático). */
   async function persistArredondada(alunoId: string, nota: number | null, manual: boolean) {
     if (!canEdit || !userId) return;
-    if (nota === null) {
-      await (supabase as any).from('medias_arredondadas').delete()
-        .eq('user_id', userId)
-        .eq('aluno_id', alunoId)
-        .eq('disciplina_id', filterDisciplina)
-        .eq('bimestre', parseInt(filterBimestre));
-    } else {
-      await (supabase as any).from('medias_arredondadas').upsert({
-        user_id: userId,
-        aluno_id: alunoId,
+    try {
+      // `null` volta ao cálculo automático (apaga o ajuste).
+      await api.put('/medias-arredondadas', {
         turma_id: filterTurma,
         disciplina_id: filterDisciplina,
         bimestre: parseInt(filterBimestre),
-        nota_arredondada: nota,
-        manual,
-      }, { onConflict: 'user_id,aluno_id,disciplina_id,bimestre' });
+        medias: [{ aluno_id: alunoId, nota_arredondada: nota, manual }],
+      });
+    } catch (err) {
+      toast({ title: 'Média não salva', description: mensagemDeErro(err), variant: 'destructive' });
     }
   }
 
@@ -782,11 +783,17 @@ export default function Notas() {
       toast({ title: 'Nada a fazer', description: 'Nenhuma nota arredondada foi editada manualmente.' });
       return;
     }
-    await (supabase as any).from('medias_arredondadas').delete()
-      .eq('user_id', userId!)
-      .eq('disciplina_id', filterDisciplina)
-      .eq('bimestre', parseInt(filterBimestre))
-      .in('aluno_id', idsManuais);
+    try {
+      await api.post('/medias-arredondadas/descartar', {
+        turma_id: filterTurma,
+        disciplina_id: filterDisciplina,
+        bimestre: parseInt(filterBimestre),
+        aluno_ids: idsManuais,
+      });
+    } catch (err) {
+      toast({ title: 'Erro ao descartar', description: mensagemDeErro(err), variant: 'destructive' });
+      return;
+    }
     setAlunosNotas(prev => prev.map(a => ({
       ...a,
       arredondadaManual: false,

@@ -37,6 +37,8 @@ export function EscaneamentoDialog({ open, onOpenChange, provas, alunos, gabarit
   const [rollManual, setRollManual] = useState('');
   const [respostasManual, setRespostasManual] = useState<Record<number, string>>({});
   const [saving, setSaving] = useState(false);
+  // Nota e aluno do último lançamento: depois de salvar, as respostas da tela já foram limpas.
+  const [salvo, setSalvo] = useState<{ nota: number; nome: string } | null>(null);
   const [imgSrc, setImgSrc] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -176,6 +178,7 @@ export function EscaneamentoDialog({ open, onOpenChange, provas, alunos, gabarit
     setSaving(true);
     await onSalvar(alunoEncontrado.id, respostasFinais, nota, acertos);
     setSaving(false);
+    setSalvo({ nota, nome: alunoEncontrado.nome });
     setStep('saved');
   }
 
@@ -367,7 +370,7 @@ export function EscaneamentoDialog({ open, onOpenChange, provas, alunos, gabarit
             <CheckCircle className="w-16 h-16 text-success" />
             <div className="text-center">
               <p className="text-lg font-bold text-foreground">Resultado salvo com sucesso!</p>
-              <p className="text-sm text-muted-foreground">Nota {nota.toFixed(1)} lançada para {alunoEncontrado?.nome}</p>
+              <p className="text-sm text-muted-foreground">Nota {salvo?.nota.toFixed(1)} lançada para {salvo?.nome}</p>
             </div>
             <div className="flex gap-2">
               <Button variant="outline" onClick={reset}><RefreshCw className="w-4 h-4 mr-1.5" />Escanear Próxima</Button>
