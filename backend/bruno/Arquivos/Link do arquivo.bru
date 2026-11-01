@@ -1,0 +1,39 @@
+meta {
+  name: Link do arquivo
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/files/pdi-documentos/url?path={{arquivoPath}}&segundos=300
+  body: none
+  auth: bearer
+}
+
+params:query {
+  path: {{arquivoPath}}
+  segundos: 300
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("link gerado", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body.url).to.be.a("string");
+  });
+}
+
+docs {
+  Gera um **link temporário** para o arquivo de `arquivoPath` (substitui o `createSignedUrl` do
+  Supabase). O link abre **sem login** até vencer: copie o `url` da resposta e abra no navegador.
+
+  Opcionais: `segundos` (10 a 86400; padrão 3600) e `download` (nome para baixar, em vez de abrir na tela).
+
+  Quem pode: o **dono** e a **gestão** (no `replicabilidade-fotos`, qualquer usuário logado).
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400, caminho inválido),
+  `ARQUIVO_NAO_ENCONTRADO` (404, também quando não é seu).
+}

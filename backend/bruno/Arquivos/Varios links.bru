@@ -1,0 +1,33 @@
+meta {
+  name: Varios links
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/files/pdi-documentos/urls
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  { "paths": ["{{arquivoPath}}"], "segundos": 3600 }
+}
+
+tests {
+  test("links gerados", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body[0].url).to.be.a("string");
+  });
+}
+
+docs {
+  Gera links para **vários arquivos** de uma vez (substitui o `createSignedUrls`), até 200.
+  Arquivo que não existe volta com `url: null`. Se algum não puder ser aberto por você, nenhum link sai.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400), `ARQUIVO_NAO_ENCONTRADO` (404).
+}

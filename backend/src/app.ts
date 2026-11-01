@@ -7,6 +7,7 @@ import { turmasRouter } from './modules/turmas/turmas.routes';
 import { alunosRouter } from './modules/alunos/alunos.routes';
 import { disciplinasRouter } from './modules/disciplinas/disciplinas.routes';
 import { calendarioRouter } from './modules/calendario/calendario.routes';
+import { filesRouter } from './modules/files/files.routes';
 import { errorHandler, notFound } from './middlewares/error-handler';
 
 export const app = express();
@@ -33,6 +34,7 @@ app.use(turmasRouter);
 app.use(alunosRouter);
 app.use(disciplinasRouter);
 app.use(calendarioRouter);
+app.use(filesRouter);
 
 app.use(notFound);
 app.use(errorHandler);

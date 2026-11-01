@@ -1,0 +1,61 @@
+meta {
+  name: Enviar arquivo
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/files/pdi-documentos?pasta=11111111-2222-4333-8444-555555555555&nome=anotações.txt
+  body: text
+  auth: bearer
+}
+
+params:query {
+  pasta: 11111111-2222-4333-8444-555555555555
+  nome: anotações.txt
+}
+
+headers {
+  Content-Type: text/plain
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:text {
+  Arquivo de teste enviado pelo Bruno.
+}
+
+script:post-response {
+  // Guarda o caminho do arquivo em `arquivoPath`, para os outros pedidos da pasta usarem.
+  if (res.status === 201) {
+    bru.setEnvVar("arquivoPath", res.body.path);
+  }
+}
+
+tests {
+  test("arquivo enviado", function () {
+    expect(res.status).to.equal(201);
+    expect(res.body.path).to.be.a("string");
+    expect(res.body.nome).to.equal("anotações.txt");
+  });
+}
+
+docs {
+  Envia um arquivo. O **corpo é o próprio arquivo** (no frontend: `fetch(url, { method: 'POST',
+  body: file, headers: { 'Content-Type': file.type } })`), com o tipo no `Content-Type`.
+
+  Na URL: `pasta` (o id do registro dono do arquivo: ocorrência, plano, evidência…) e `nome`
+  (o nome original). O arquivo vai sempre para a **pasta de quem envia**:
+  `<seu id>/<pasta>/<data>-<sorteio>-<nome>`. O caminho volta em `path` (é o que a tela grava no banco)
+  e fica salvo em `arquivoPath`.
+
+  Buckets: `ocorrencias-fotos`, `pdi-fotos`, `replicabilidade-fotos`, `tutoria-fotos` (imagens, até
+  10 MB); `pdi-documentos` (documentos), `plano-anexos` e `tutoria-documentos` (documentos e imagens),
+  até 20 MB. Este exemplo manda um `.txt` para `pdi-documentos`.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400, sem pasta),
+  `ARQUIVO_VAZIO` (400), `BUCKET_NAO_ENCONTRADO` (404), `ARQUIVO_GRANDE_DEMAIS` (413),
+  `TIPO_NAO_PERMITIDO` (415).
+}

@@ -21,6 +21,8 @@ npm run test:alunos      # confere os alunos, a regra "só a gestão exclui" e a
 npm run test:disciplinas # confere as matérias e os vínculos matéria ↔ turma
 npm run test:membros     # confere os membros das eletivas
 npm run test:calendario  # confere a grade de horários e o ano letivo
+npm run test:arquivos    # confere o correio de arquivos (pasta temporária)
+npm run test:supabase-storage # confere a ligação com o Supabase Storage (contra um Supabase simulado)
 npm run dev              # http://localhost:3333/health
 ```
 
@@ -47,6 +49,8 @@ npm run dev              # http://localhost:3333/health
 | `npm run test:disciplinas` | Conferência das matérias e dos vínculos matéria ↔ turma, com o padrão A (idem) |
 | `npm run test:membros` | Conferência dos membros das turmas personalizadas (eletivas) (idem) |
 | `npm run test:calendario` | Conferência da grade de horários e do ano letivo (só o admin altera; não mexe nos dados reais) |
+| `npm run test:arquivos` | Conferência do correio de arquivos: enviar, links temporários, excluir e quem pode (armazenamento local temporário) |
+| `npm run test:supabase-storage` | Conferência do driver do Supabase Storage contra um Supabase simulado (chave, caminhos, links em lote, nada vaza) |
 
 ## Schema
 
@@ -188,6 +192,39 @@ Padrão C: cadastro da escola. Qualquer usuário logado lê; **só o admin** cri
 
 O fim precisa ser depois do início (horário e período). Erros: `DADOS_INVALIDOS` (400), `SEM_PERMISSAO` (403),
 `HORARIO_NAO_ENCONTRADO` / `ANO_LETIVO_NAO_ENCONTRADO` (404), `HORARIO_EM_USO` / `ANO_LETIVO_DUPLICADO` (409).
+
+## Arquivos (correio de arquivos)
+
+Fotos e documentos passam **só pelo backend** (o navegador não fala mais com o Storage). O armazenamento é
+escolhido por `STORAGE_DRIVER`: `local` (pasta `STORAGE_LOCAL_DIR`, padrão `.storage`, fora do git) para
+desenvolvimento e testes, ou `supabase` (Supabase Storage, produção).
+
+Regra única para os 7 buckets, pela convenção do sistema atual (primeira pasta do caminho = dono):
+**enviar** sempre na própria pasta; **abrir** o dono e a gestão (em `replicabilidade-fotos`, qualquer usuário
+logado); **excluir** o dono e o admin. Quem não pode abrir recebe 404, como se o arquivo não existisse.
+
+| Rota | O que faz |
+|---|---|
+| `POST /files/:bucket?pasta=&nome=` | Corpo = o próprio arquivo, tipo no `Content-Type`. Guarda em `<usuário>/<pasta>/<data>-<sorteio>-<nome seguro>`. 201 `{ bucket, path, nome, mime_type, tamanho_bytes }` |
+| `GET /files/:bucket/url?path=&segundos=&download=` | Link temporário `{ path, url, expira_em }` (padrão 1 h; `download` = baixar com esse nome) |
+| `POST /files/:bucket/urls` `{ paths, segundos? }` | Vários links (até 200); arquivo inexistente → `url: null` |
+| `DELETE /files/:bucket?path=` | 204 |
+| `POST /files/:bucket/excluir` `{ paths }` | `{ excluidos }`; se algum não puder, nenhum sai |
+| `GET /files/link/:token` | (só `local`) abre o link temporário, sem login, até vencer |
+
+| Bucket | Tipos | Limite |
+|---|---|---|
+| `ocorrencias-fotos`, `pdi-fotos`, `replicabilidade-fotos`, `tutoria-fotos` | imagens (jpeg, png, webp, gif, heic) | 10 MB |
+| `pdi-documentos` | documentos (pdf, Word, Excel, PowerPoint, OpenDocument, txt, csv) | 20 MB |
+| `plano-anexos`, `tutoria-documentos` | documentos e imagens | 20 MB |
+
+Com `STORAGE_DRIVER=supabase`, o backend usa a API REST do Storage com `SUPABASE_URL` e
+`SUPABASE_SERVICE_ROLE_KEY` (obrigatórias nesse modo; a chave **nunca** vai para o navegador nem para as respostas,
+e sai mascarada nos logs). Os links devolvidos são as URLs assinadas do próprio Supabase, geradas em lote
+(uma ida só para vários arquivos). Os 7 buckets precisam existir no projeto (no atual, já existem).
+
+Erros: `DADOS_INVALIDOS` (400, pasta ou caminho inválido), `ARQUIVO_VAZIO` (400), `SEM_PERMISSAO` (403),
+`ARQUIVO_NAO_ENCONTRADO` / `BUCKET_NAO_ENCONTRADO` (404), `ARQUIVO_GRANDE_DEMAIS` (413), `TIPO_NAO_PERMITIDO` (415).
 
 ## Collection do Bruno
 

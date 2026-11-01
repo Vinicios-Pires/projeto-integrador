@@ -24,7 +24,9 @@
     "test:alunos": "tsx scripts/testar-alunos.ts",
     "test:disciplinas": "tsx scripts/testar-disciplinas.ts",
     "test:membros": "tsx scripts/testar-membros.ts",
-    "test:calendario": "tsx scripts/testar-calendario.ts"
+    "test:calendario": "tsx scripts/testar-calendario.ts",
+    "test:arquivos": "tsx scripts/testar-arquivos.ts",
+    "test:supabase-storage": "tsx scripts/testar-supabase-storage.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
