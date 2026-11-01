@@ -1,0 +1,47 @@
+meta {
+  name: Criar atividade
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/diario/atividades
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "nome": "Caderno",
+    "turma_id": "{{turmaId}}",
+    "disciplina_id": "{{disciplinaId}}",
+    "bimestre": 1,
+    "tipo": "nota",
+    "categoria": "Caderno"
+  }
+}
+
+script:post-response {
+  if (res.status === 201) bru.setEnvVar("atividadeId", res.body.id);
+}
+
+tests {
+  test("atividade criada", function () {
+    expect(res.status).to.equal(201);
+    expect(res.body.tipo).to.equal("nota");
+  });
+}
+
+docs {
+  Cria uma coluna do diário: `nome` e `turma_id` obrigatórios; `disciplina_id`, `bimestre` (padrão 1),
+  `tipo` (`nota` ou `conceito`), `data`, `peso` (padrão 1), `categoria`, `observacao`. Vai para o fim.
+  Guarda o id em `atividadeId`. Também há `PATCH`/`DELETE /diario/atividades/:id` e
+  `PUT /diario/atividades/ordem` (`{ ids }`).
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400), `TURMA_INVALIDA` (400),
+  `DISCIPLINA_INVALIDA` (400).
+}

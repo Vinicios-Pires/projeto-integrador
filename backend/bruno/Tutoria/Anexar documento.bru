@@ -1,0 +1,42 @@
+meta {
+  name: Anexar documento
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/tutorados/{{tutoradoId}}/documentos?nome=plano-de-estudos.txt
+  body: text
+  auth: bearer
+}
+
+params:query {
+  nome: plano-de-estudos.txt
+}
+
+headers {
+  Content-Type: text/plain
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:text {
+  Plano de estudos enviado pelo Bruno.
+}
+
+tests {
+  test("documento anexado", function () {
+    expect(res.status).to.equal(201);
+  });
+}
+
+docs {
+  Anexa um documento ao tutorado (documentos e imagens, até 20 MB), na pasta do tutor. A foto do tutorado é
+  `PUT /tutorados/:id/foto` (só imagem, até 10 MB; troca a anterior) e `DELETE /tutorados/:id/foto`. Para abrir:
+  `GET /files/tutoria-documentos/url?path=` e `GET /files/tutoria-fotos/url?path=`.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `ARQUIVO_VAZIO` (400), `SEM_PERMISSAO` (403),
+  `TUTORADO_NAO_ENCONTRADO` (404), `ARQUIVO_GRANDE_DEMAIS` (413), `TIPO_NAO_PERMITIDO` (415).
+}

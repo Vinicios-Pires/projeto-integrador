@@ -1,0 +1,27 @@
+meta {
+  name: Excluir evento
+  type: http
+  seq: 3
+}
+
+delete {
+  url: {{baseUrl}}/eventos-escola/{{eventoId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("evento excluído", function () {
+    expect(res.status).to.equal(204);
+  });
+}
+
+docs {
+  **Gestão** exclui o evento.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `SEM_PERMISSAO` (403), `EVENTO_NAO_ENCONTRADO` (404).
+}

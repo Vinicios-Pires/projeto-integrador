@@ -1,0 +1,27 @@
+meta {
+  name: Excluir publicacao
+  type: http
+  seq: 4
+}
+
+delete {
+  url: {{baseUrl}}/replicabilidades/{{replicabilidadeId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("publicação excluída", function () {
+    expect(res.status).to.equal(204);
+  });
+}
+
+docs {
+  Exclui a publicação; as fotos saem junto, do banco e do armazenamento. Só quem publicou (ou o admin).
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `SEM_PERMISSAO` (403), `REPLICABILIDADE_NAO_ENCONTRADA` (404).
+}

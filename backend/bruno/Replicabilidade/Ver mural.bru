@@ -1,0 +1,28 @@
+meta {
+  name: Ver mural
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/replicabilidades
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("mural", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body).to.be.an("array");
+  });
+}
+
+docs {
+  O mural inteiro, as publicações mais novas primeiro, cada uma com as fotos em ordem e o nome de quem publicou.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400).
+}

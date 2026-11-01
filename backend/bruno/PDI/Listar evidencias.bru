@@ -1,0 +1,28 @@
+meta {
+  name: Listar evidencias
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/pdi-evidencias
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("evidências", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body).to.be.an("array");
+  });
+}
+
+docs {
+  As evidências (mais recentes primeiro), com `fotos` e `documentos`. O professor vê as suas; a gestão, todas.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400).
+}

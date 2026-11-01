@@ -30,6 +30,13 @@ npm run test:correcao    # confere a correção das provas
 npm run test:planejamentos # confere o planejamento bimestral e a validação
 npm run test:planos      # confere os planos de aula, duplicar, ajustes e a trava
 npm run test:aprovacao   # confere a aprovação dos planos e os anexos
+npm run test:diario      # confere o diário de classe
+npm run test:agenda      # confere a agenda do professor
+npm run test:escola      # confere eventos da escola, apoio presencial e lembretes
+npm run test:ocorrencias # confere as ocorrências (notebook, com fotos, e escolares)
+npm run test:pdi         # confere as evidências do PDI, com fotos e documentos
+npm run test:tutoria     # confere a tutoria (tutorados e acompanhamento)
+npm run test:replicabilidade # confere o mural de replicabilidade
 npm run dev              # http://localhost:3333/health
 ```
 
@@ -65,6 +72,13 @@ npm run dev              # http://localhost:3333/health
 | `npm run test:planejamentos` | Conferência do planejamento bimestral e da validação pela gestão (usuários e dados temporários) |
 | `npm run test:planos` | Conferência dos planos de aula: aulas, duplicar, copiar para baixo, ajustes e a trava do validado |
 | `npm run test:aprovacao` | Conferência da aprovação dos planos pela gestão e dos anexos (pasta temporária de arquivos) |
+| `npm run test:diario` | Conferência do diário de classe: atividades, lançamentos e observações (usuários e dados temporários) |
+| `npm run test:agenda` | Conferência da agenda do professor: rotina e exceções (horários de grade próprios do teste) |
+| `npm run test:escola` | Conferência dos eventos da escola, do apoio presencial e dos lembretes (eventos no ano de 2099) |
+| `npm run test:ocorrencias` | Conferência das ocorrências do notebook (com fotos, pasta temporária) e das escolares |
+| `npm run test:pdi` | Conferência das evidências do PDI, com fotos e documentos (pasta temporária) |
+| `npm run test:tutoria` | Conferência da tutoria: tutorados, check-ins, registros, combinados, foto e documentos (pasta temporária) |
+| `npm run test:replicabilidade` | Conferência do mural de replicabilidade, com fotos (pasta temporária) |
 
 ## Schema
 
@@ -364,6 +378,152 @@ Textos: `aprendizagem_essencial`, `conteudo`, `objetivos`, `recursos`, `desenvol
 Aula aprovada ou devolvida que o professor edita **volta a pendente** (o comentário fica). Excluir a aula apaga os
 arquivos dos anexos. Planilha validada não recebe nem perde anexos. Erros extras: `ANEXO_NAO_ENCONTRADO` (404),
 `ARQUIVO_GRANDE_DEMAIS` (413), `TIPO_NAO_PERMITIDO` (415).
+
+## Diário de classe
+
+Padrão A. Atividades são as colunas; lançamentos, as células (texto livre: "8,5", "MB"…); e uma observação por
+aluno, turma, matéria e bimestre. `peso` sai como número; `data` como `AAAA-MM-DD`.
+
+| Rota | Quem | O que faz |
+|---|---|---|
+| `GET /diario/atividades?turma_id=&disciplina_id=&bimestre=` | logado | Colunas, na ordem |
+| `POST /diario/atividades` | logado | `{ nome, turma_id, disciplina_id?, bimestre?, tipo?, data?, peso?, categoria?, observacao? }`. `tipo`: `nota` ou `conceito` |
+| `PATCH /diario/atividades/:id` | dono, admin | Altera só o enviado; turma e matéria não mudam |
+| `PUT /diario/atividades/ordem` | dono, admin | `{ ids }`: nova ordem (0, 1, 2…) |
+| `DELETE /diario/atividades/:id` | dono, admin | 204. Os lançamentos saem junto |
+| `GET /diario/lancamentos?atividade_id=&aluno_id=` | logado | Células; os dois filtros aceitam vários |
+| `PUT /diario/lancamentos` | dono, admin | `{ lancamentos: [{ atividade_id, aluno_id, valor, fez?, observacao? }] }` (até 2000). Vazio apaga. Tudo ou nada |
+| `GET /diario/observacoes?turma_id=&disciplina_id=&bimestre=&aluno_id=` | logado | Observações dos alunos |
+| `PUT /diario/observacoes` | dono, admin | `{ aluno_id, turma_id, disciplina_id?, bimestre, observacao }`. Vazio apaga (204) |
+
+Erros: `DADOS_INVALIDOS` / `TURMA_INVALIDA` / `DISCIPLINA_INVALIDA` / `ALUNO_INVALIDO` / `ALUNO_FORA_DA_TURMA` (400),
+`SEM_PERMISSAO` (403), `ATIVIDADE_NAO_ENCONTRADA` (404).
+
+## Agenda do professor
+
+Cada um grava **a própria** agenda; a gestão vê a de um professor com `?user_id=`; o admin pode limpar itens de
+qualquer um. Itens em lista, com "grava ou corrige" (tudo ou nada, até 400).
+
+| Rota | Quem | O que faz |
+|---|---|---|
+| `GET /agenda/rotina?user_id=` | logado | A rotina da semana |
+| `PUT /agenda/rotina` | logado | `{ itens: [{ dia_semana (0 = domingo … 6), horario_grade_id, turma_id?, disciplina_id?, atividade?, cor? }] }`. Um por dia e horário |
+| `DELETE /agenda/rotina/:id` | dono, admin | 204. "Limpar" a célula |
+| `GET /agenda/excecoes?de=&ate=&user_id=` | logado | Exceções (`data` como `AAAA-MM-DD`) |
+| `PUT /agenda/excecoes` | logado | `{ itens: [{ data, horario_grade_id, turma_id?, disciplina_id?, atividade?, cancelado?, observacao? }] }`. Uma por data e horário |
+| `DELETE /agenda/excecoes/:id` | dono, admin | 204. O dia volta à rotina |
+
+Erros: `DADOS_INVALIDOS` / `HORARIO_INVALIDO` / `TURMA_INVALIDA` / `DISCIPLINA_INVALIDA` (400), `SEM_PERMISSAO` (403),
+`AGENDA_NAO_ENCONTRADA` (404).
+
+## Eventos da escola, apoio presencial e lembretes
+
+| Rota | Quem | O que faz |
+|---|---|---|
+| `GET /eventos-escola?de=&ate=&tipo=` | logado | Calendário da escola, em ordem de início (`ate` inclui o dia) |
+| `POST /eventos-escola` | gestão | `{ titulo, data_inicio, data_fim?, dia_todo?, tipo?, descricao?, cor? }`. Datas `AAAA-MM-DD` ou `AAAA-MM-DDTHH:MM` (sem fuso = UTC) |
+| `PATCH` / `DELETE /eventos-escola/:id` | gestão | Qualquer pessoa da gestão, não só quem criou |
+| `GET /apoio-presencial?de=&ate=&professor_id=` | logado | Gestão vê todos; o professor, só os seus (como professor ou responsável) |
+| `POST /apoio-presencial` | gestão | `{ data, professor_id, responsavel_id, horario_grade_id?, observacao? }` |
+| `PATCH` / `DELETE /apoio-presencial/:id` | gestão | |
+| `GET /lembretes` | logado | Os **próprios** post-its (fixados primeiro) |
+| `POST /lembretes` | logado | `{ titulo, descricao?, data?, prioridade?, cor?, turma_id?, disciplina_id?, fixado? }` |
+| `PATCH` / `DELETE /lembretes/:id` | dono | Ninguém mexe nos lembretes de outra pessoa, nem o admin |
+
+`tipo` do evento: `reuniao`, `formacao`, `evento`, `avaliacao_externa`, `conselho`, `apoio_presencial`, `acompanhamento`,
+`observacao`, `visita`, `aviso` (padrão). Lembretes: `prioridade` baixa/media/alta; `cor` amarelo, verde, azul, rosa,
+laranja, roxo. Erros: `DADOS_INVALIDOS` / `USUARIO_INVALIDO` / `HORARIO_INVALIDO` / `TURMA_INVALIDA` (400),
+`SEM_PERMISSAO` (403), `EVENTO_NAO_ENCONTRADO` / `APOIO_NAO_ENCONTRADO` / `LEMBRETE_NAO_ENCONTRADO` (404).
+
+## Ocorrências
+
+**Do notebook** (padrão A; cada ocorrência vem com `turmas` e `fotos`):
+
+| Rota | Quem | O que faz |
+|---|---|---|
+| `GET /ocorrencias-notebook?turma_id=&de=&ate=` | logado | As mais recentes primeiro |
+| `GET /ocorrencias-notebook/:id` | dono, gestão | Uma ocorrência |
+| `POST /ocorrencias-notebook` | logado | `{ turma_id?, data_ocorrencia?, quantidade_notebooks?, alunos_envolvidos?, problema_encontrado?, descricao?, equipamento_danificado?, internet_funcionou?, solucao_adotada?, observacoes? }` |
+| `PATCH` / `DELETE /ocorrencias-notebook/:id` | dono, admin | Excluir leva as fotos (banco e armazenamento) |
+| `POST /ocorrencias-notebook/:id/fotos?nome=` | dono, admin | Corpo: a imagem (até 10 MB). Fica na pasta de quem registrou. Abrir: `GET /files/ocorrencias-fotos/url?path=` |
+| `DELETE /ocorrencias-notebook/:id/fotos/:fotoId` | dono, admin | 204 |
+
+**Escolares** (o professor registra; a gestão vê todas e responde):
+
+| Rota | Quem | O que faz |
+|---|---|---|
+| `GET /ocorrencias-escolares?status=&tipo=&user_id=&aluno=&de=&ate=` | logado | O professor vê as suas; a gestão, todas. `aluno` busca parte do nome |
+| `POST /ocorrencias-escolares` | logado | `{ tipo, descricao, data?, turma?, disciplina?, alunos? }`. Nasce `nova` |
+| `PATCH /ocorrencias-escolares/:id` | dono, admin | Só enquanto `nova` (409 `OCORRENCIA_EM_ATENDIMENTO`) |
+| `POST /ocorrencias-escolares/:id/resposta` | gestão | `{ status, providencias? }`. Grava `gestao_user_id`, `respondido_em` e marca "não vista" |
+| `POST /ocorrencias-escolares/:id/visto` | dono | O professor viu a resposta |
+| `DELETE /ocorrencias-escolares/:id` | dono, admin | 204 |
+
+`status`: `nova`, `em_andamento`, `resolvida`. `tipo`: comportamento, falta de atividade, uso inadequado de
+equipamento, conflito, atraso, sem material, conversa excessiva, outro. Erros: `DADOS_INVALIDOS` / `TURMA_INVALIDA` /
+`ARQUIVO_VAZIO` (400), `SEM_PERMISSAO` (403), `OCORRENCIA_NAO_ENCONTRADA` / `FOTO_NAO_ENCONTRADA` (404),
+`OCORRENCIA_EM_ATENDIMENTO` (409), `ARQUIVO_GRANDE_DEMAIS` (413), `TIPO_NAO_PERMITIDO` (415).
+
+## PDI (evidências)
+
+Padrão A. Cada evidência vem com `fotos` e `documentos`; os arquivos ficam na pasta do professor dono, e os links
+saem de `/files/pdi-fotos/url` e `/files/pdi-documentos/url`.
+
+| Rota | Quem | O que faz |
+|---|---|---|
+| `GET /pdi-evidencias?turma_id=&disciplina_id=&bimestre=&ano_letivo=&tipo_atividade=&user_id=` | logado | As mais recentes primeiro |
+| `GET /pdi-evidencias/:id` | dono, gestão | Uma evidência |
+| `POST /pdi-evidencias` | logado | `{ titulo, data_realizacao?, ano_letivo?, bimestre?, turma_id?, disciplina_id?, tipo_atividade?, objetivo?, descricao?, resultados? }` |
+| `PATCH` / `DELETE /pdi-evidencias/:id` | dono, admin | Excluir leva fotos e documentos (banco e armazenamento) |
+| `POST /pdi-evidencias/:id/fotos?nome=` | dono, admin | Corpo: a imagem (até 10 MB) |
+| `POST /pdi-evidencias/:id/documentos?nome=` | dono, admin | Corpo: o documento (até 20 MB) |
+| `DELETE /pdi-evidencias/:id/fotos/:fotoId` · `/documentos/:docId` | dono, admin | 204 |
+
+`tipo_atividade`: Aula prática, Jogo educativo, Projeto, Experimento, Tecnologia/Robótica, Atividade avaliativa, Outro
+(padrão). Erros: `DADOS_INVALIDOS` / `TURMA_INVALIDA` / `DISCIPLINA_INVALIDA` / `ARQUIVO_VAZIO` (400), `SEM_PERMISSAO` (403),
+`EVIDENCIA_NAO_ENCONTRADA` / `ARQUIVO_NAO_ENCONTRADO` (404), `ARQUIVO_GRANDE_DEMAIS` (413), `TIPO_NAO_PERMITIDO` (415).
+
+## Tutoria
+
+Padrão A sobre o tutorado (o tutor vê e altera; a gestão vê; o admin pode tudo). O acompanhamento fica no nome do
+tutor, mesmo quando o admin registra; os arquivos ficam na pasta dele.
+
+| Rota | Quem | O que faz |
+|---|---|---|
+| `GET /tutorados?status=&user_id=` | logado | Tutorados em ordem de nome |
+| `POST /tutorados` | logado | `{ nome, aluno_id?, turma?, numero_chamada?, status?, observacoes?, data_inicio? }`. O mesmo aluno duas vezes → 409 `TUTORADO_DUPLICADO` |
+| `POST /tutorados/vincular` | logado | `{ aluno_ids }` (até 200): dados do cadastro do aluno; os já tutorados ficam de fora. Devolve `{ criados, ja_existiam }` |
+| `GET /tutorados/:id` | tutor, gestão | Com `checkins`, `registros`, `combinados` e `documentos` |
+| `PATCH` / `DELETE /tutorados/:id` | tutor, admin | Excluir leva o acompanhamento, a foto e os documentos |
+| `PUT` / `DELETE /tutorados/:id/foto` | tutor, admin | Corpo: a imagem (até 10 MB); troca a anterior |
+| `POST /tutorados/:id/checkins` | tutor, admin | `{ humor, observacao? }`. `humor`: bem, mais_ou_menos, dificil, observar |
+| `POST /tutorados/:id/registros` | tutor, admin | `{ como_esta, observacao?, combinado?, proxima_acao?, data? }` |
+| `POST /tutorados/:id/combinados` | tutor, admin | `{ descricao, data? }` (nasce `pendente`) |
+| `PATCH /tutorados/:id/combinados/:itemId` | tutor, admin | `{ status?: pendente \| concluido, descricao? }` |
+| `POST /tutorados/:id/documentos?nome=` | tutor, admin | Corpo: o documento ou imagem (até 20 MB) |
+| `DELETE /tutorados/:id/{checkins\|registros\|combinados\|documentos}/:itemId` | tutor, admin | 204 |
+| `GET /tutoria-registros?tutorado_id=` | logado | Registros de vários tutorados de uma vez |
+
+Erros: `DADOS_INVALIDOS` / `ALUNO_INVALIDO` / `ARQUIVO_VAZIO` (400), `SEM_PERMISSAO` (403), `TUTORADO_NAO_ENCONTRADO` /
+`ITEM_NAO_ENCONTRADO` / `ARQUIVO_NAO_ENCONTRADO` (404), `TUTORADO_DUPLICADO` (409), `ARQUIVO_GRANDE_DEMAIS` (413),
+`TIPO_NAO_PERMITIDO` (415).
+
+## Replicabilidade (mural)
+
+Padrão D: **todo usuário logado vê tudo**, com `fotos` (em ordem) e `autor: { nome }`. Professores e admin publicam
+(a gestão só vê); quem publicou e o admin alteram e excluem.
+
+| Rota | Quem | O que faz |
+|---|---|---|
+| `GET /replicabilidades?user_id=` | logado | O mural, as mais novas primeiro |
+| `GET /replicabilidades/:id` | logado | Uma publicação |
+| `POST /replicabilidades` | professor, admin | `{ titulo, descricao? }` |
+| `PATCH` / `DELETE /replicabilidades/:id` | dono, admin | Excluir leva as fotos (banco e armazenamento) |
+| `POST /replicabilidades/:id/fotos?nome=` | dono, admin | Corpo: a imagem (até 10 MB); vai para o fim da ordem |
+| `DELETE /replicabilidades/:id/fotos/:fotoId` | dono, admin | 204 |
+
+Erros: `DADOS_INVALIDOS` / `ARQUIVO_VAZIO` (400), `SEM_PERMISSAO` (403), `REPLICABILIDADE_NAO_ENCONTRADA` /
+`ARQUIVO_NAO_ENCONTRADO` (404), `ARQUIVO_GRANDE_DEMAIS` (413), `TIPO_NAO_PERMITIDO` (415).
 
 ## Collection do Bruno
 

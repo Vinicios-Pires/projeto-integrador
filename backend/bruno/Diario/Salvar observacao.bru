@@ -1,0 +1,39 @@
+meta {
+  name: Salvar observacao
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{baseUrl}}/diario/observacoes
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "aluno_id": "{{alunoId}}",
+    "turma_id": "{{turmaId}}",
+    "disciplina_id": "{{disciplinaId}}",
+    "bimestre": 1,
+    "observacao": "Participa bem das aulas."
+  }
+}
+
+tests {
+  test("observação salva", function () {
+    expect(res.status).to.equal(200);
+  });
+}
+
+docs {
+  Grava ou corrige a observação do aluno no bimestre (uma por aluno, turma, matéria e bimestre). Texto vazio
+  apaga (204). Lista: `GET /diario/observacoes?turma_id=&disciplina_id=&bimestre=&aluno_id=`.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400), `TURMA_INVALIDA` (400),
+  `DISCIPLINA_INVALIDA` (400), `ALUNO_INVALIDO` (400), `ALUNO_FORA_DA_TURMA` (400), `SEM_PERMISSAO` (403).
+}

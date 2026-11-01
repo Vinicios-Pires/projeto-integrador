@@ -1,0 +1,27 @@
+meta {
+  name: Excluir lembrete
+  type: http
+  seq: 8
+}
+
+delete {
+  url: {{baseUrl}}/lembretes/{{lembreteId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("lembrete excluído", function () {
+    expect(res.status).to.equal(204);
+  });
+}
+
+docs {
+  Apaga o lembrete. Só quem criou.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `LEMBRETE_NAO_ENCONTRADO` (404).
+}

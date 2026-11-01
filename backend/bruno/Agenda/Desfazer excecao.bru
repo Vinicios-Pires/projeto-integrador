@@ -1,0 +1,27 @@
+meta {
+  name: Desfazer excecao
+  type: http
+  seq: 4
+}
+
+delete {
+  url: {{baseUrl}}/agenda/excecoes/{{excecaoId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("exceção desfeita", function () {
+    expect(res.status).to.equal(204);
+  });
+}
+
+docs {
+  Desfaz a exceção: o dia volta a seguir a rotina. Só o dono (ou o admin).
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `SEM_PERMISSAO` (403), `AGENDA_NAO_ENCONTRADA` (404).
+}

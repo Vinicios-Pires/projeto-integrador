@@ -1,0 +1,30 @@
+meta {
+  name: Ver tutorado
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/tutorados/{{tutoradoId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("tutorado com o acompanhamento", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body.registros).to.be.an("array");
+    expect(res.body.documentos).to.be.an("array");
+  });
+}
+
+docs {
+  O tutorado com todo o acompanhamento: `checkins`, `registros`, `combinados` e `documentos`. O tutor e a
+  gestão veem. Registros de vários tutorados: `GET /tutoria-registros?tutorado_id=a,b`.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `TUTORADO_NAO_ENCONTRADO` (404).
+}

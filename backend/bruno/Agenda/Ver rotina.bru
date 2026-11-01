@@ -1,0 +1,28 @@
+meta {
+  name: Ver rotina
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/agenda/rotina
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("rotina da semana", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body).to.be.an("array");
+  });
+}
+
+docs {
+  A rotina da semana de quem está logado. A gestão pode ver a de um professor com `?user_id=`.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400), `AGENDA_NAO_ENCONTRADA` (404).
+}

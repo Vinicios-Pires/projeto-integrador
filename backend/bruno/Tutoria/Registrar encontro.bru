@@ -1,0 +1,40 @@
+meta {
+  name: Registrar encontro
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/tutorados/{{tutoradoId}}/registros
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "como_esta": "Motivado",
+    "observacao": "Melhorou nas entregas.",
+    "proxima_acao": "Conversar com a família"
+  }
+}
+
+tests {
+  test("registro salvo", function () {
+    expect(res.status).to.equal(201);
+  });
+}
+
+docs {
+  Registra um encontro de tutoria (`como_esta` obrigatório; `observacao`, `combinado`, `proxima_acao`, `data`).
+  Também: `POST /tutorados/:id/checkins` (`{ humor: bem | mais_ou_menos | dificil | observar, observacao? }`),
+  `POST /tutorados/:id/combinados` (`{ descricao }`, nasce pendente) e
+  `PATCH /tutorados/:id/combinados/:itemId` (`{ status: pendente | concluido }`). Apagar:
+  `DELETE /tutorados/:id/{checkins|registros|combinados|documentos}/:itemId`.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400), `SEM_PERMISSAO` (403),
+  `TUTORADO_NAO_ENCONTRADO` / `ITEM_NAO_ENCONTRADO` (404).
+}

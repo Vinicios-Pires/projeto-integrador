@@ -1,0 +1,48 @@
+meta {
+  name: Registrar evidencia
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/pdi-evidencias
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "titulo": "Horta na escola",
+    "turma_id": "{{turmaId}}",
+    "bimestre": 2,
+    "tipo_atividade": "Projeto",
+    "data_realizacao": "2026-05-12",
+    "objetivo": "Estudar o ciclo das plantas"
+  }
+}
+
+script:post-response {
+  if (res.status === 201) bru.setEnvVar("evidenciaId", res.body.id);
+}
+
+tests {
+  test("evidência registrada", function () {
+    expect(res.status).to.equal(201);
+    expect(res.body.fotos).to.be.an("array");
+  });
+}
+
+docs {
+  Registra uma evidência do PDI. Só `titulo` é obrigatório. `tipo_atividade`: Aula prática, Jogo educativo,
+  Projeto, Experimento, Tecnologia/Robótica, Atividade avaliativa, Outro (padrão). Padrão A: lista em
+  `GET /pdi-evidencias?turma_id=&disciplina_id=&bimestre=&ano_letivo=&tipo_atividade=&user_id=`, cada uma com
+  `fotos` e `documentos`; `PATCH`/`DELETE /pdi-evidencias/:id` (excluir leva os arquivos). Guarda o id em
+  `evidenciaId`.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400), `TURMA_INVALIDA` (400),
+  `DISCIPLINA_INVALIDA` (400), `SEM_PERMISSAO` (403), `EVIDENCIA_NAO_ENCONTRADA` (404).
+}

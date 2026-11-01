@@ -1,0 +1,44 @@
+meta {
+  name: Anexar documento
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/pdi-evidencias/{{evidenciaId}}/documentos?nome=relatorio.txt
+  body: text
+  auth: bearer
+}
+
+params:query {
+  nome: relatorio.txt
+}
+
+headers {
+  Content-Type: text/plain
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:text {
+  Relatório da atividade enviado pelo Bruno.
+}
+
+tests {
+  test("documento anexado", function () {
+    expect(res.status).to.equal(201);
+    expect(res.body.tamanho_bytes).to.be.a("number");
+  });
+}
+
+docs {
+  Anexa um documento à evidência (até 20 MB, só documentos). Fotos: `POST /pdi-evidencias/:id/fotos?nome=`
+  (só imagens, até 10 MB). Ficam na pasta do professor dono. Remover: `DELETE /pdi-evidencias/:id/fotos/:fotoId`
+  e `DELETE /pdi-evidencias/:id/documentos/:docId`. Para abrir: `GET /files/pdi-documentos/url?path=`.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `ARQUIVO_VAZIO` (400), `SEM_PERMISSAO` (403),
+  `EVIDENCIA_NAO_ENCONTRADA` / `ARQUIVO_NAO_ENCONTRADO` (404), `ARQUIVO_GRANDE_DEMAIS` (413),
+  `TIPO_NAO_PERMITIDO` (415).
+}

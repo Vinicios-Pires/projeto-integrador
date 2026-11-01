@@ -1,0 +1,45 @@
+meta {
+  name: Registrar ocorrencia escolar
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/ocorrencias-escolares
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "tipo": "comportamento",
+    "descricao": "Conversa excessiva durante a explicação.",
+    "turma": "8°C",
+    "disciplina": "Matemática",
+    "alunos": "Ana Souza"
+  }
+}
+
+script:post-response {
+  if (res.status === 201) bru.setEnvVar("ocorrenciaEscolarId", res.body.id);
+}
+
+tests {
+  test("ocorrência enviada", function () {
+    expect(res.status).to.equal(201);
+    expect(res.body.status).to.equal("nova");
+  });
+}
+
+docs {
+  O professor envia a ocorrência para a gestão (situação `nova`). `tipo`: comportamento, falta de atividade,
+  uso inadequado de equipamento, conflito, atraso, sem material, conversa excessiva, outro. O professor vê as
+  suas; a gestão, todas (`GET /ocorrencias-escolares?status=&tipo=&user_id=&aluno=&de=&ate=`). Enquanto `nova`,
+  quem registrou corrige (`PATCH`). Guarda o id em `ocorrenciaEscolarId`.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400), `OCORRENCIA_EM_ATENDIMENTO` (409).
+}

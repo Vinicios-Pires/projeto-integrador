@@ -1,0 +1,46 @@
+meta {
+  name: Criar evento
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/eventos-escola
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "titulo": "Conselho de classe",
+    "tipo": "conselho",
+    "data_inicio": "2026-12-10T14:00",
+    "data_fim": "2026-12-10T17:00"
+  }
+}
+
+script:post-response {
+  if (res.status === 201) bru.setEnvVar("eventoId", res.body.id);
+}
+
+tests {
+  test("evento criado", function () {
+    expect(res.status).to.equal(201);
+    expect(res.body.tipo).to.equal("conselho");
+  });
+}
+
+docs {
+  **Gestão** cria um evento no calendário da escola: `titulo` e `data_inicio` obrigatórios; `data_fim`,
+  `dia_todo`, `tipo` (reuniao, formacao, evento, avaliacao_externa, conselho, apoio_presencial,
+  acompanhamento, observacao, visita, aviso — padrão aviso), `descricao`, `cor`. Datas: `AAAA-MM-DD` ou
+  `AAAA-MM-DDTHH:MM` (sem fuso, vale como UTC, como no Supabase). Qualquer pessoa da gestão altera
+  (`PATCH /eventos-escola/:id`). Guarda o id em `eventoId`.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400), `SEM_PERMISSAO` (403),
+  `EVENTO_NAO_ENCONTRADO` (404).
+}

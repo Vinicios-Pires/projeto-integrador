@@ -1,0 +1,27 @@
+meta {
+  name: Excluir evidencia
+  type: http
+  seq: 4
+}
+
+delete {
+  url: {{baseUrl}}/pdi-evidencias/{{evidenciaId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("evidência excluída", function () {
+    expect(res.status).to.equal(204);
+  });
+}
+
+docs {
+  Exclui a evidência; as fotos e os documentos saem junto, do banco e do armazenamento. Só o dono (ou o admin).
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `SEM_PERMISSAO` (403), `EVIDENCIA_NAO_ENCONTRADA` (404).
+}

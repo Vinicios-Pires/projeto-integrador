@@ -1,0 +1,45 @@
+meta {
+  name: Salvar rotina
+  type: http
+  seq: 2
+}
+
+put {
+  url: {{baseUrl}}/agenda/rotina
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "itens": [
+      { "dia_semana": 1, "horario_grade_id": "{{horarioId}}", "turma_id": "{{turmaId}}", "disciplina_id": "{{disciplinaId}}" }
+    ]
+  }
+}
+
+script:post-response {
+  if (res.status === 200) bru.setEnvVar("rotinaId", res.body[0].id);
+}
+
+tests {
+  test("rotina salva", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body[0].dia_semana).to.equal(1);
+  });
+}
+
+docs {
+  Grava ou corrige a rotina: um item por dia da semana (0 = domingo … 6 = sábado) e horário da grade, com
+  `turma_id`, `disciplina_id`, `atividade` e `cor` opcionais (até 400 itens; serve para "replicar a segunda").
+  Sempre na agenda de quem está logado. **Tudo ou nada.** Precisa de `horarioId` (rode
+  *Calendario > Criar horario* com o admin, ou copie um id de *Calendario > Listar grade*). "Limpar" uma célula:
+  `DELETE /agenda/rotina/:id`.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400), `HORARIO_INVALIDO` (400),
+  `TURMA_INVALIDA` (400), `DISCIPLINA_INVALIDA` (400).
+}

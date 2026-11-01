@@ -1,0 +1,46 @@
+meta {
+  name: Registrar ocorrencia notebook
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/ocorrencias-notebook
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "turma_id": "{{turmaId}}",
+    "data_ocorrencia": "2026-10-20",
+    "quantidade_notebooks": 30,
+    "problema_encontrado": "Sem internet",
+    "internet_funcionou": false
+  }
+}
+
+script:post-response {
+  if (res.status === 201) bru.setEnvVar("ocorrenciaId", res.body.id);
+}
+
+tests {
+  test("ocorrência registrada", function () {
+    expect(res.status).to.equal(201);
+    expect(res.body.fotos).to.be.an("array");
+  });
+}
+
+docs {
+  Registra uma ocorrência do uso dos notebooks. Todos os campos são opcionais (sem data, vale a de hoje).
+  Padrão A: o dono e a gestão veem (`GET /ocorrencias-notebook?turma_id=&de=&ate=`); dono e admin alteram
+  (`PATCH`/`DELETE /ocorrencias-notebook/:id`; excluir leva as fotos). Cada ocorrência vem com `turmas` e
+  `fotos`. Guarda o id em `ocorrenciaId`.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400), `TURMA_INVALIDA` (400),
+  `SEM_PERMISSAO` (403), `OCORRENCIA_NAO_ENCONTRADA` (404).
+}

@@ -1,0 +1,43 @@
+meta {
+  name: Marcar apoio presencial
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/apoio-presencial
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "data": "2026-12-11",
+    "professor_id": "{{professorId}}",
+    "responsavel_id": "{{responsavelId}}",
+    "observacao": "Acompanhamento de leitura"
+  }
+}
+
+script:post-response {
+  if (res.status === 201) bru.setEnvVar("apoioId", res.body.id);
+}
+
+tests {
+  test("apoio marcado", function () {
+    expect(res.status).to.equal(201);
+  });
+}
+
+docs {
+  **Gestão** marca o apoio presencial: um `responsavel_id` acompanha a aula do `professor_id` na `data`
+  (`horario_grade_id` e `observacao` opcionais). Preencha `professorId` e `responsavelId` com ids de *Usuarios > Listar usuarios*. A gestão vê todos (`GET /apoio-presencial?de=&ate=&professor_id=`);
+  o professor vê os seus. Também há `PATCH` e `DELETE /apoio-presencial/:id`. Guarda o id em `apoioId`.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400), `USUARIO_INVALIDO` (400),
+  `HORARIO_INVALIDO` (400), `SEM_PERMISSAO` (403), `APOIO_NAO_ENCONTRADO` (404).
+}

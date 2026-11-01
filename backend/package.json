@@ -33,7 +33,14 @@
     "test:correcao": "tsx scripts/testar-correcao.ts",
     "test:planejamentos": "tsx scripts/testar-planejamentos.ts",
     "test:planos": "tsx scripts/testar-planos.ts",
-    "test:aprovacao": "tsx scripts/testar-aprovacao.ts"
+    "test:aprovacao": "tsx scripts/testar-aprovacao.ts",
+    "test:diario": "tsx scripts/testar-diario.ts",
+    "test:agenda": "tsx scripts/testar-agenda.ts",
+    "test:escola": "tsx scripts/testar-escola.ts",
+    "test:ocorrencias": "tsx scripts/testar-ocorrencias.ts",
+    "test:pdi": "tsx scripts/testar-pdi.ts",
+    "test:tutoria": "tsx scripts/testar-tutoria.ts",
+    "test:replicabilidade": "tsx scripts/testar-replicabilidade.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

@@ -1,0 +1,43 @@
+meta {
+  name: Criar lembrete
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/lembretes
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "titulo": "Corrigir as provas do 9º A",
+    "data": "2026-12-15",
+    "prioridade": "alta",
+    "cor": "rosa"
+  }
+}
+
+script:post-response {
+  if (res.status === 201) bru.setEnvVar("lembreteId", res.body.id);
+}
+
+tests {
+  test("lembrete criado", function () {
+    expect(res.status).to.equal(201);
+  });
+}
+
+docs {
+  Cria um lembrete (post-it) **pessoal**: só quem criou vê e mexe (nem a gestão). `prioridade`: baixa, media,
+  alta; `cor`: amarelo, verde, azul, rosa, laranja, roxo. Lista: `GET /lembretes` (fixados primeiro);
+  `PATCH /lembretes/:id` marca como feito (`concluido`), fixa (`fixado`) etc. Guarda o id em `lembreteId`.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400), `TURMA_INVALIDA` (400),
+  `DISCIPLINA_INVALIDA` (400), `LEMBRETE_NAO_ENCONTRADO` (404).
+}

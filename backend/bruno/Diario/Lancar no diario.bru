@@ -1,0 +1,41 @@
+meta {
+  name: Lancar no diario
+  type: http
+  seq: 3
+}
+
+put {
+  url: {{baseUrl}}/diario/lancamentos
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "lancamentos": [
+      { "atividade_id": "{{atividadeId}}", "aluno_id": "{{alunoId}}", "valor": "8,5" }
+    ]
+  }
+}
+
+tests {
+  test("célula salva", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body.salvos[0].valor).to.equal("8,5");
+  });
+}
+
+docs {
+  Salva uma ou várias células (até 2000; serve para colar do Excel). `valor` é texto livre de até 30
+  caracteres ("8,5", "MB"…); vazio, sem `fez` nem `observacao`, apaga. O aluno precisa ser da turma da
+  atividade (ou membro da eletiva). **Tudo ou nada.** Lista: `GET /diario/lancamentos?atividade_id=a,b`.
+
+  Resposta: `{ salvos: [...], apagados: n }`.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400), `ALUNO_INVALIDO` (400),
+  `ALUNO_FORA_DA_TURMA` (400), `SEM_PERMISSAO` (403), `ATIVIDADE_NAO_ENCONTRADA` (404).
+}

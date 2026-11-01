@@ -1,0 +1,43 @@
+meta {
+  name: Publicar
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/replicabilidades
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "titulo": "Rotação por estações",
+    "descricao": "Como organizei a sala em quatro estações."
+  }
+}
+
+script:post-response {
+  if (res.status === 201) bru.setEnvVar("replicabilidadeId", res.body.id);
+}
+
+tests {
+  test("publicado", function () {
+    expect(res.status).to.equal(201);
+    expect(res.body.autor).to.be.an("object");
+  });
+}
+
+docs {
+  Publica uma boa prática no mural (`titulo` obrigatório, `descricao`). **Todo usuário logado vê tudo**
+  (`GET /replicabilidades?user_id=`), com `fotos` e `autor: { nome }`. Professores e admin publicam; a gestão só
+  vê. Quem publicou (ou o admin) altera e exclui (`PATCH`/`DELETE /replicabilidades/:id`). Guarda o id em
+  `replicabilidadeId`.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400), `SEM_PERMISSAO` (403),
+  `REPLICABILIDADE_NAO_ENCONTRADA` (404).
+}

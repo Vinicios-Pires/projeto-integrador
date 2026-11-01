@@ -1,0 +1,34 @@
+meta {
+  name: Listar eventos
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/eventos-escola?de=2026-12-01&ate=2026-12-31
+  body: none
+  auth: bearer
+}
+
+params:query {
+  de: 2026-12-01
+  ate: 2026-12-31
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+tests {
+  test("eventos do período", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body).to.be.an("array");
+  });
+}
+
+docs {
+  Os eventos da escola, em ordem de início. Todo usuário logado vê. Filtros: `de` e `ate` (o dia inteiro,
+  pelo início) e `tipo`.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400).
+}

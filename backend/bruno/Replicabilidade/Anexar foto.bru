@@ -1,0 +1,43 @@
+meta {
+  name: Anexar foto
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/replicabilidades/{{replicabilidadeId}}/fotos?nome=estacao.png
+  body: text
+  auth: bearer
+}
+
+params:query {
+  nome: estacao.png
+}
+
+headers {
+  Content-Type: image/png
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:text {
+  imagem de teste enviada pelo Bruno
+}
+
+tests {
+  test("foto anexada", function () {
+    expect(res.status).to.equal(201);
+    expect(res.body.ordem).to.be.a("number");
+  });
+}
+
+docs {
+  Anexa uma foto (até 10 MB); vai para o fim da ordem. Qualquer usuário logado abre pelo
+  `GET /files/replicabilidade-fotos/url?path=`. Remover: `DELETE /replicabilidades/:id/fotos/:fotoId`.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `ARQUIVO_VAZIO` (400), `SEM_PERMISSAO` (403),
+  `REPLICABILIDADE_NAO_ENCONTRADA` / `ARQUIVO_NAO_ENCONTRADO` (404), `ARQUIVO_GRANDE_DEMAIS` (413),
+  `TIPO_NAO_PERMITIDO` (415).
+}

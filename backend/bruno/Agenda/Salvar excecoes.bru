@@ -1,0 +1,43 @@
+meta {
+  name: Salvar excecoes
+  type: http
+  seq: 3
+}
+
+put {
+  url: {{baseUrl}}/agenda/excecoes
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:json {
+  {
+    "itens": [
+      { "data": "2026-11-09", "horario_grade_id": "{{horarioId}}", "cancelado": true, "observacao": "Conselho de classe" }
+    ]
+  }
+}
+
+script:post-response {
+  if (res.status === 200) bru.setEnvVar("excecaoId", res.body[0].id);
+}
+
+tests {
+  test("exceção salva", function () {
+    expect(res.status).to.equal(200);
+    expect(res.body[0].cancelado).to.equal(true);
+  });
+}
+
+docs {
+  Grava ou corrige exceções de um dia: uma por data e horário. Muda a aula naquele dia (`turma_id`,
+  `disciplina_id`, `atividade`), cancela (`cancelado: true`) ou repete em várias datas (até 400). Lista:
+  `GET /agenda/excecoes?de=&ate=&user_id=`.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `DADOS_INVALIDOS` (400), `HORARIO_INVALIDO` (400),
+  `TURMA_INVALIDA` (400), `DISCIPLINA_INVALIDA` (400).
+}

@@ -1,0 +1,48 @@
+meta {
+  name: Anexar foto
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/ocorrencias-notebook/{{ocorrenciaId}}/fotos?nome=tela.png
+  body: text
+  auth: bearer
+}
+
+params:query {
+  nome: tela.png
+}
+
+headers {
+  Content-Type: image/png
+}
+
+auth:bearer {
+  token: {{token}}
+}
+
+body:text {
+  imagem de teste enviada pelo Bruno
+}
+
+script:post-response {
+  if (res.status === 201) bru.setEnvVar("fotoId", res.body.id);
+}
+
+tests {
+  test("foto anexada", function () {
+    expect(res.status).to.equal(201);
+    expect(res.body.path).to.be.a("string");
+  });
+}
+
+docs {
+  Anexa uma foto (o corpo é a imagem, com o `Content-Type`; até 10 MB). Fica na pasta de quem registrou a
+  ocorrência. Para abrir: `GET /files/ocorrencias-fotos/url?path=<path>`. Remover:
+  `DELETE /ocorrencias-notebook/:id/fotos/:fotoId`. Guarda o id em `fotoId`.
+
+  Erros possíveis: `NAO_AUTENTICADO` (401), `ARQUIVO_VAZIO` (400), `SEM_PERMISSAO` (403),
+  `OCORRENCIA_NAO_ENCONTRADA` / `FOTO_NAO_ENCONTRADA` (404), `ARQUIVO_GRANDE_DEMAIS` (413),
+  `TIPO_NAO_PERMITIDO` (415).
+}
