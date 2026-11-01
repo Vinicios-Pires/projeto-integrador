@@ -37,6 +37,12 @@ npm run test:ocorrencias # confere as ocorrências (notebook, com fotos, e escol
 npm run test:pdi         # confere as evidências do PDI, com fotos e documentos
 npm run test:tutoria     # confere a tutoria (tutorados e acompanhamento)
 npm run test:replicabilidade # confere o mural de replicabilidade
+npm run test:tela-login  # confere as telas de login no navegador (precisa do npm install no frontend)
+npm run test:tela-cadastros # confere as telas de turmas, eletivas, alunos e matérias no navegador
+npm run test:tela-notas  # confere as telas de notas, correção de provas e Prova Paulista no navegador
+npm run test:tela-planos # confere a tela de plano de aula (planilha, anexos e validação) no navegador
+npm run test:tela-diario-agenda # confere diário, agenda, lembretes, relatórios e painel da gestão no navegador
+npm run test:tela-ocorrencias-pdi # confere ocorrências, PDI, tutoria e replicabilidade (com arquivos) no navegador
 npm run dev              # http://localhost:3333/health
 ```
 
@@ -79,6 +85,12 @@ npm run dev              # http://localhost:3333/health
 | `npm run test:pdi` | Conferência das evidências do PDI, com fotos e documentos (pasta temporária) |
 | `npm run test:tutoria` | Conferência da tutoria: tutorados, check-ins, registros, combinados, foto e documentos (pasta temporária) |
 | `npm run test:replicabilidade` | Conferência do mural de replicabilidade, com fotos (pasta temporária) |
+| `npm run test:tela-login` | Conferência das telas de login do frontend num navegador de verdade (sobe API e Vite em portas livres; usa o Chromium do Playwright do frontend) |
+| `npm run test:tela-cadastros` | Conferência das telas de Turmas (com eletivas), Alunos (com importação) e Matérias no navegador |
+| `npm run test:tela-notas` | Conferência das telas de Notas (com colar notas e médias arredondadas), Correção de Provas e Prova Paulista no navegador |
+| `npm run test:tela-planos` | Conferência da tela de Plano de Aula: planilha, datas em sequência, copiar para baixo, ajustes, anexos e validação, no navegador |
+| `npm run test:tela-diario-agenda` | Conferência do Diário, da Agenda (rotina, escola, apoio presencial), dos lembretes, dos Relatórios e do painel da gestão, no navegador |
+| `npm run test:tela-ocorrencias-pdi` | Conferência das Ocorrências (notebook e escolares), do PDI, da Tutoria e da Replicabilidade, com fotos e documentos, no navegador |
 
 ## Schema
 
@@ -327,7 +339,7 @@ Padrão A para ver (o professor vê os seus; a gestão, todos) e fluxo de valida
 
 | Rota | Quem | O que faz |
 |---|---|---|
-| `GET /planejamentos?bimestre=&ano=&turma_id=&disciplina_id=&user_id=` | logado | Planejamentos (ano mais recente primeiro) com `turmas: { nome, serie }` e `disciplinas: { nome }` |
+| `GET /planejamentos?bimestre=&ano=&turma_id=&disciplina_id=&user_id=` | logado | Planejamentos (ano mais recente primeiro) com `turmas: { nome, serie }`, `disciplinas: { nome }` e `aulas_count` (quantas aulas a planilha tem) |
 | `GET /planejamentos/:id` | dono, gestão | Um planejamento |
 | `POST /planejamentos` | logado | `{ turma_id, disciplina_id?, bimestre, ano? }`. Devolve o que já existe (200) ou cria um rascunho (201). Ano padrão: o atual |
 | `POST /planejamentos/:id/status` | ver abaixo | `{ status, observacao? }` |
@@ -423,7 +435,7 @@ Erros: `DADOS_INVALIDOS` / `HORARIO_INVALIDO` / `TURMA_INVALIDA` / `DISCIPLINA_I
 | `GET /eventos-escola?de=&ate=&tipo=` | logado | Calendário da escola, em ordem de início (`ate` inclui o dia) |
 | `POST /eventos-escola` | gestão | `{ titulo, data_inicio, data_fim?, dia_todo?, tipo?, descricao?, cor? }`. Datas `AAAA-MM-DD` ou `AAAA-MM-DDTHH:MM` (sem fuso = UTC) |
 | `PATCH` / `DELETE /eventos-escola/:id` | gestão | Qualquer pessoa da gestão, não só quem criou |
-| `GET /apoio-presencial?de=&ate=&professor_id=` | logado | Gestão vê todos; o professor, só os seus (como professor ou responsável) |
+| `GET /apoio-presencial?de=&ate=&professor_id=` | logado | Gestão vê todos; o professor, só os seus (como professor ou responsável). Com `professor_nome` e `responsavel_nome` |
 | `POST /apoio-presencial` | gestão | `{ data, professor_id, responsavel_id, horario_grade_id?, observacao? }` |
 | `PATCH` / `DELETE /apoio-presencial/:id` | gestão | |
 | `GET /lembretes` | logado | Os **próprios** post-its (fixados primeiro) |
@@ -452,7 +464,7 @@ laranja, roxo. Erros: `DADOS_INVALIDOS` / `USUARIO_INVALIDO` / `HORARIO_INVALIDO
 
 | Rota | Quem | O que faz |
 |---|---|---|
-| `GET /ocorrencias-escolares?status=&tipo=&user_id=&aluno=&de=&ate=` | logado | O professor vê as suas; a gestão, todas. `aluno` busca parte do nome |
+| `GET /ocorrencias-escolares?status=&tipo=&user_id=&aluno=&de=&ate=` | logado | O professor vê as suas; a gestão, todas. `aluno` busca parte do nome. Com `professor_nome` e `gestao_nome` |
 | `POST /ocorrencias-escolares` | logado | `{ tipo, descricao, data?, turma?, disciplina?, alunos? }`. Nasce `nova` |
 | `PATCH /ocorrencias-escolares/:id` | dono, admin | Só enquanto `nova` (409 `OCORRENCIA_EM_ATENDIMENTO`) |
 | `POST /ocorrencias-escolares/:id/resposta` | gestão | `{ status, providencias? }`. Grava `gestao_user_id`, `respondido_em` e marca "não vista" |
@@ -524,6 +536,49 @@ Padrão D: **todo usuário logado vê tudo**, com `fotos` (em ordem) e `autor: {
 
 Erros: `DADOS_INVALIDOS` / `ARQUIVO_VAZIO` (400), `SEM_PERMISSAO` (403), `REPLICABILIDADE_NAO_ENCONTRADA` /
 `ARQUIVO_NAO_ENCONTRADO` (404), `ARQUIVO_GRANDE_DEMAIS` (413), `TIPO_NAO_PERMITIDO` (415).
+
+## Ligando o frontend
+
+O frontend (`../frontend`) fala com a API pelo cliente `src/lib/api.ts`, no endereço de `VITE_API_URL`
+(no `.env` do frontend; em dev, `http://localhost:3333`). O token do login fica no `localStorage` do
+navegador e vai no cabeçalho `Authorization`; quando a API recusa o token (401), o frontend volta para o login.
+
+Como o frontend roda em outro endereço, a API só responde ao navegador para as origens de `CORS_ORIGINS`
+(separadas por vírgula; padrão `http://localhost:8080`, a porta do Vite). Outros sites não recebem a liberação.
+
+```bash
+cd ../frontend && npm install && npm run dev   # http://localhost:8080 (com a API ligada)
+```
+
+**Todas as telas estão ligadas ao backend** (login, cadastros, notas e provas, planos de aula, diário, agenda,
+painéis, relatórios, ocorrências, PDI, tutoria e replicabilidade). Os arquivos passam pelo correio de arquivos
+(`/files`): o frontend envia o arquivo para a rota do módulo e pede links temporários para mostrar. O frontend
+não usa mais o Supabase: o `@supabase/supabase-js`, o cliente gerado e as variáveis `VITE_SUPABASE_*` saíram.
+O Supabase continua só como armazenamento de arquivos, acessado pelo backend (`STORAGE_DRIVER=supabase`).
+
+As conferências de tela (`test:tela-*`) usam a base comum `scripts/telas.ts`: API e Vite em portas livres,
+Chromium do Playwright do frontend (`npx playwright install chromium` na pasta `frontend`, se faltar) e
+usuários de teste apagados no final; os arquivos enviados pelas telas vão para uma pasta temporária
+(`STORAGE_DRIVER=local`), também apagada. Se uma conferência parar no meio, ela conta como falha e salva uma foto
+da tela na pasta temporária do sistema.
+
+Para listas grandes de ids (ex.: as notas de todas as avaliações de Prova Paulista), o frontend usa
+`buscarEmLotes` (`src/lib/api.ts`), que divide os ids em lotes separados por vírgula (o backend aceita até 500
+por filtro).
+
+## Colocar no ar (Render)
+
+O arquivo [`../render.yaml`](../render.yaml) descreve os dois serviços para o Render (New > Blueprint):
+
+| Serviço | O que é | Como sobe |
+|---|---|---|
+| `painelescolar-api` | Este backend (Node) | `npm ci && npx prisma generate && npm run build`; ao iniciar, aplica as migrations (`prisma migrate deploy`) e roda `npm start`. Verificação de vida em `/health` |
+| `painelescolar-web` | O frontend (site estático) | `npm install && npm run build`, publica `dist/`; todo caminho abre o `index.html` |
+
+Preencha no painel do Render (nunca no git): `DATABASE_URL` e `DIRECT_URL` (Neon), `SUPABASE_URL` e
+`SUPABASE_SERVICE_ROLE_KEY` (arquivos), `CORS_ORIGINS` (o endereço do site) e, no site, `VITE_API_URL` (o
+endereço da API). O `JWT_SECRET` é gerado pelo próprio Render. Os dois ficam na região de Virgínia, perto do
+banco no Neon. O primeiro admin já existe no banco (criado pelo `npm run seed`).
 
 ## Collection do Bruno
 

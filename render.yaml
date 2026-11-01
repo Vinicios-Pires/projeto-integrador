@@ -1,0 +1,54 @@
+# Render Blueprint do Painel Escolar: o backend (API) e o frontend (site estático).
+# No Render: New > Blueprint > este repositório. Os valores com `sync: false` são pedidos na criação
+# (preencha no painel do Render; NUNCA coloque senhas ou chaves neste arquivo).
+# Região "virginia": a mesma do banco no Neon (N. Virginia), para a API ficar perto do banco.
+
+services:
+  - type: web
+    name: painelescolar-api
+    runtime: node
+    region: virginia
+    plan: free
+    rootDir: backend
+    buildCommand: npm ci && npx prisma generate && npm run build
+    # As migrations são aplicadas a cada subida (no plano gratuito não há "pre-deploy").
+    startCommand: npx prisma migrate deploy && npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL # Neon, string "pooled" (host com -pooler)
+        sync: false
+      - key: DIRECT_URL # Neon, string direta (sem -pooler), usada pelas migrations
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 8h
+      - key: ALLOWED_EMAIL_DOMAIN
+        value: prof.educacao.sp.gov.br
+      - key: TRUST_PROXY # o Render tem um proxy na frente da API
+        value: "1"
+      - key: CORS_ORIGINS # o endereço do site (painelescolar-web), ex.: https://painelescolar-web.onrender.com
+        sync: false
+      - key: STORAGE_DRIVER
+        value: supabase
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY # SECRETA: só aqui, nunca no frontend
+        sync: false
+
+  - type: web
+    name: painelescolar-web
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL # o endereço da API (painelescolar-api), ex.: https://painelescolar-api.onrender.com
+        sync: false
+    routes:
+      # O frontend é uma página só (React Router): todo caminho abre o index.html.
+      - type: rewrite
+        source: /*
+        destination: /index.html
