@@ -43,7 +43,8 @@
     "test:replicabilidade": "tsx scripts/testar-replicabilidade.ts",
     "test:tela-login": "tsx scripts/testar-tela-login.ts",
     "test:tela-cadastros": "tsx scripts/testar-tela-cadastros.ts",
-    "test:tela-notas": "tsx scripts/testar-tela-notas.ts"
+    "test:tela-notas": "tsx scripts/testar-tela-notas.ts",
+    "test:tela-planos": "tsx scripts/testar-tela-planos.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

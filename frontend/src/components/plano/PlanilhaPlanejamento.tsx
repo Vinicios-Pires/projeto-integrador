@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { api, mensagemDeErro } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/hooks/use-permissions';
 import { useLinhasPlanejamento, type LinhaAula, type Planejamento, STATUS_LABEL, diaDaSemanaISO, fmtDataBR } from '@/hooks/use-planejamento';
@@ -49,24 +49,23 @@ export function PlanilhaPlanejamento({ planejamento, professorNome, disciplinaNo
   /* ------- Manipulação otimista de linhas ------- */
   const atualizarLinha = async (id: string, patch: Partial<LinhaAula>) => {
     setLinhas(prev => prev.map(l => l.id === id ? { ...l, ...patch } : l));
-    const { error } = await supabase.from('planos_aula').update(patch).eq('id', id);
-    if (error) { toast({ title: 'Erro ao salvar', description: error.message, variant: 'destructive' }); refetch(); }
+    try {
+      await api.patch(`/planos-aula/${id}`, patch);
+    } catch (err) {
+      toast({ title: 'Erro ao salvar', description: mensagemDeErro(err), variant: 'destructive' });
+      refetch();
+    }
   };
 
   const adicionarLinha = async (data: string) => {
     if (!user) return;
-    const { data: nova, error } = await supabase.from('planos_aula').insert({
-      user_id: user.id,
-      turma_id: planejamento.turma_id,
-      disciplina_id: planejamento.disciplina_id,
-      bimestre: planejamento.bimestre,
-      data_aula: data,
-      planejamento_id: planejamento.id,
-      tipo: 'normal',
-      status: 'pendente',
-      numero_aulas: 1,
-    }).select('*').single();
-    if (error) { toast({ title: 'Erro', description: error.message, variant: 'destructive' }); return; }
+    try {
+      // Turma, matéria, bimestre e dono vêm do planejamento.
+      await api.post('/planos-aula', { data_aula: data, planejamento_id: planejamento.id, numero_aulas: 1 });
+    } catch (err) {
+      toast({ title: 'Erro', description: mensagemDeErro(err), variant: 'destructive' });
+      return;
+    }
     refetch();
   };
 
@@ -82,32 +81,23 @@ export function PlanilhaPlanejamento({ planejamento, professorNome, disciplinaNo
       if (diasSemana.includes(d.getDay())) datas.push(d.toISOString().slice(0, 10));
     }
     if (datas.length === 0) { toast({ title: 'Nenhuma data gerada' }); return; }
-    const linhas = datas.map(data => ({
-      user_id: user.id,
-      turma_id: planejamento.turma_id,
-      disciplina_id: planejamento.disciplina_id,
-      bimestre: planejamento.bimestre,
-      data_aula: data,
-      planejamento_id: planejamento.id,
-      tipo: 'normal' as const,
-      status: 'pendente' as const,
-      numero_aulas: 1,
-    }));
-    const { error } = await supabase.from('planos_aula').insert(linhas);
-    if (error) toast({ title: 'Erro', description: error.message, variant: 'destructive' });
-    else toast({ title: `${datas.length} aulas adicionadas` });
+    try {
+      await api.post(`/planejamentos/${planejamento.id}/aulas`, { datas, numero_aulas: 1 });
+      toast({ title: `${datas.length} aulas adicionadas` });
+    } catch (err) {
+      toast({ title: 'Erro', description: mensagemDeErro(err), variant: 'destructive' });
+    }
     refetch();
   };
 
   const duplicarLinha = async (l: LinhaAula) => {
     if (!user) return;
-    const { id, ...rest } = l as any;
-    const novaData = new Date(l.data_aula + 'T12:00:00');
-    novaData.setDate(novaData.getDate() + 7);
-    const { error } = await supabase.from('planos_aula').insert({
-      ...rest, data_aula: novaData.toISOString().slice(0, 10), tipo: 'normal', status: 'pendente',
-    });
-    if (error) toast({ title: 'Erro', description: error.message, variant: 'destructive' });
+    try {
+      // Cópia pendente, uma semana depois (o padrão do backend).
+      await api.post(`/planos-aula/${l.id}/duplicar`, {});
+    } catch (err) {
+      toast({ title: 'Erro', description: mensagemDeErro(err), variant: 'destructive' });
+    }
     refetch();
   };
 
@@ -116,39 +106,44 @@ export function PlanilhaPlanejamento({ planejamento, professorNome, disciplinaNo
     const alvos = linhas.slice(idx + 1).map(x => x.id);
     if (alvos.length === 0) { toast({ title: 'Sem linhas abaixo' }); return; }
     const valor = (l as any)[campo];
-    await (supabase.from('planos_aula') as any).update({ [campo]: valor }).in('id', alvos);
-    toast({ title: `Copiado para ${alvos.length} linhas` });
+    try {
+      await api.patch('/planos-aula/lote', { ids: alvos, dados: { [campo]: valor } });
+      toast({ title: `Copiado para ${alvos.length} linhas` });
+    } catch (err) {
+      toast({ title: 'Erro ao copiar', description: mensagemDeErro(err), variant: 'destructive' });
+    }
     refetch();
   };
 
   const excluirLinha = async (l: LinhaAula) => {
     if (!confirm('Excluir esta aula do planejamento?')) return;
-    await supabase.from('planos_aula').delete().eq('id', l.id);
+    try {
+      await api.delete(`/planos-aula/${l.id}`);
+    } catch (err) {
+      toast({ title: 'Erro ao excluir', description: mensagemDeErro(err), variant: 'destructive' });
+    }
     refetch();
   };
 
   const mudarStatus = async (novo: 'rascunho' | 'aguardando_validacao' | 'validado', obs?: string) => {
-    const patch: any = { status: novo };
-    if (novo === 'validado') {
-      patch.validado_por = user?.id;
-      patch.validado_em = new Date().toISOString();
-      patch.observacao_validacao = obs ?? null;
-    } else {
-      patch.validado_por = null;
-      patch.validado_em = null;
-      if (obs !== undefined) patch.observacao_validacao = obs;
+    try {
+      // O backend confere quem pode fazer cada passagem e grava quem validou e quando.
+      await api.post(`/planejamentos/${planejamento.id}/status`, { status: novo, observacao: obs });
+      toast({ title: 'Status atualizado' });
+      onChange();
+    } catch (err) {
+      toast({ title: 'Erro', description: mensagemDeErro(err), variant: 'destructive' });
     }
-    const { error } = await supabase.from('planejamentos_bimestrais').update(patch).eq('id', planejamento.id);
-    if (error) toast({ title: 'Erro', description: error.message, variant: 'destructive' });
-    else { toast({ title: 'Status atualizado' }); onChange(); }
   };
 
   const exportarPdf = async () => {
     const ids = linhas.map(l => l.id);
     let cont: Record<string, { doc: number; adapt: number }> = {};
     if (ids.length > 0) {
-      const { data } = await supabase.from('plano_anexos').select('plano_id,tipo').in('plano_id', ids);
-      (data || []).forEach((a: any) => {
+      const anexos = (await Promise.all(ids.map(id =>
+        api.get<{ plano_id: string; tipo: string }[]>(`/planos-aula/${id}/anexos`).catch(() => []),
+      ))).flat();
+      anexos.forEach(a => {
         if (!cont[a.plano_id]) cont[a.plano_id] = { doc: 0, adapt: 0 };
         if (a.tipo === 'adaptada') cont[a.plano_id].adapt++; else cont[a.plano_id].doc++;
       });
@@ -386,14 +381,18 @@ function DialogAjuste({ linha, onClose }: { linha: LinhaAula | null; onClose: ()
   const { toast } = useToast();
   useEffect(() => {
     if (!linha) { setDesc(''); setHist([]); return; }
-    supabase.from('ajustes_plano').select('id,descricao,created_at').eq('plano_id', linha.id).order('created_at', { ascending: false }).then(({ data }) => setHist((data as any) || []));
+    api.get<typeof hist>(`/planos-aula/${linha.id}/ajustes`).then(setHist, () => setHist([]));
   }, [linha?.id]);
   if (!linha) return null;
   const salvar = async () => {
     if (!desc.trim()) return;
-    const { error } = await supabase.from('ajustes_plano').insert({ plano_id: linha.id, descricao: desc });
-    if (error) toast({ title: 'Erro', description: error.message, variant: 'destructive' });
-    else { toast({ title: 'Ajuste registrado' }); onClose(); }
+    try {
+      await api.post(`/planos-aula/${linha.id}/ajustes`, { descricao: desc });
+      toast({ title: 'Ajuste registrado' });
+      onClose();
+    } catch (err) {
+      toast({ title: 'Erro', description: mensagemDeErro(err), variant: 'destructive' });
+    }
   };
   return (
     <Dialog open onOpenChange={onClose}>

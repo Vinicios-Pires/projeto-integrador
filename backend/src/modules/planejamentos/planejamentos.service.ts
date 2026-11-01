@@ -18,14 +18,22 @@ type Status = (typeof STATUS)[number];
 const comTurmaEDisciplina = {
   turma: { select: { nome: true, serie: true } },
   disciplina: { select: { nome: true } },
+  _count: { select: { planos_aula: true } },
 } satisfies Prisma.planejamentos_bimestraisInclude;
 type PlanejamentoComDados = Prisma.planejamentos_bimestraisGetPayload<{ include: typeof comTurmaEDisciplina }>;
 
-export type PlanejamentoRow = Omit<PlanejamentoComDados, 'turma' | 'disciplina'> & {
+export type PlanejamentoRow = Omit<PlanejamentoComDados, 'turma' | 'disciplina' | '_count'> & {
   turmas: PlanejamentoComDados['turma'];
   disciplinas: PlanejamentoComDados['disciplina'];
+  /** Quantas aulas a planilha tem (a lista de planejamentos mostra). */
+  aulas_count: number;
 };
-const toRow = ({ turma, disciplina, ...p }: PlanejamentoComDados): PlanejamentoRow => ({ ...p, turmas: turma, disciplinas: disciplina });
+const toRow = ({ turma, disciplina, _count, ...p }: PlanejamentoComDados): PlanejamentoRow => ({
+  ...p,
+  turmas: turma,
+  disciplinas: disciplina,
+  aulas_count: _count.planos_aula,
+});
 
 const anoAtual = () => new Date().getFullYear();
 

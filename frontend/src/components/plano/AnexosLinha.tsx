@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { api, linkDoArquivo, mensagemDeErro } from '@/lib/api';
 import { Paperclip, Download, X, Loader2 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
@@ -22,38 +22,38 @@ export function AnexosLinha({ planoId, userId, tipo, readOnly, label }: Props) {
   const { toast } = useToast();
 
   const load = async () => {
-    const { data } = await supabase
-      .from('plano_anexos')
-      .select('id,nome_arquivo,storage_path')
-      .eq('plano_id', planoId)
-      .eq('tipo', tipo);
-    setAnexos((data as Anexo[]) || []);
+    setAnexos(await api.get<Anexo[]>(`/planos-aula/${planoId}/anexos`, { tipo }).catch(() => []));
   };
 
   useEffect(() => { load(); }, [planoId, tipo]);
 
   const upload = async (file: File) => {
     setUploading(true);
-    const path = `${userId}/${planoId}/${tipo}/${Date.now()}_${file.name}`;
-    const { error: upErr } = await supabase.storage.from('plano-anexos').upload(path, file);
-    if (upErr) { toast({ title: 'Falha no upload', description: upErr.message, variant: 'destructive' }); setUploading(false); return; }
-    const { error } = await supabase.from('plano_anexos').insert({
-      plano_id: planoId, user_id: userId, nome_arquivo: file.name,
-      storage_path: path, mime_type: file.type, tamanho_bytes: file.size, tipo,
-    });
-    if (error) toast({ title: 'Erro ao salvar anexo', description: error.message, variant: 'destructive' });
+    try {
+      // O arquivo vai pelo backend, que guarda na pasta do professor dono e registra o anexo.
+      await api.post(`/planos-aula/${planoId}/anexos`, file, { tipo, nome: file.name });
+    } catch (err) {
+      toast({ title: 'Falha no upload', description: mensagemDeErro(err), variant: 'destructive' });
+    }
     await load();
     setUploading(false);
   };
 
   const baixar = async (a: Anexo) => {
-    const { data } = await supabase.storage.from('plano-anexos').createSignedUrl(a.storage_path, 60);
-    if (data?.signedUrl) window.open(data.signedUrl, '_blank');
+    try {
+      window.open(await linkDoArquivo('plano-anexos', a.storage_path, 60), '_blank');
+    } catch (err) {
+      toast({ title: 'Não foi possível abrir', description: mensagemDeErro(err), variant: 'destructive' });
+    }
   };
 
   const remover = async (a: Anexo) => {
-    await supabase.storage.from('plano-anexos').remove([a.storage_path]);
-    await supabase.from('plano_anexos').delete().eq('id', a.id);
+    try {
+      // Apaga o registro e o arquivo.
+      await api.delete(`/planos-aula/${planoId}/anexos/${a.id}`);
+    } catch (err) {
+      toast({ title: 'Erro ao remover', description: mensagemDeErro(err), variant: 'destructive' });
+    }
     load();
   };
 

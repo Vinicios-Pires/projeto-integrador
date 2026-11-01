@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { api, mensagemDeErro } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/hooks/use-permissions';
 import { usePlanejamentos, type Planejamento, STATUS_LABEL } from '@/hooks/use-planejamento';
@@ -22,7 +22,7 @@ type Perfil = { id: string; nome: string; email: string };
 const ANO_ATUAL = new Date().getFullYear();
 
 export default function PlanoAula() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { isGestao, isProfessor, isAdmin } = usePermissions();
   const { toast } = useToast();
 
@@ -50,24 +50,28 @@ export default function PlanoAula() {
   const [criarOpen, setCriarOpen] = useState(false);
 
   useEffect(() => {
-    supabase.from('disciplinas').select('id,nome,cor').then(({ data }) => setDisciplinas((data as Disciplina[]) || []));
-    supabase.from('turmas').select('id,nome').order('nome').then(({ data }) => setTurmas((data as Turma[]) || []));
-    supabase.from('profiles').select('id,nome,email').then(({ data }) => {
-      const map: Record<string, Perfil> = {};
-      (data || []).forEach((p: any) => map[p.id] = p);
-      setPerfis(map);
-    });
+    api.get<Disciplina[]>('/disciplinas').then(setDisciplinas, () => setDisciplinas([]));
+    api.get<Turma[]>('/turmas').then(setTurmas, () => setTurmas([]));
   }, []);
 
-  // Contagem de aulas por planejamento
+  // Nomes dos professores: a gestão lê a lista de usuários; o professor só precisa do próprio nome.
   useEffect(() => {
-    if (planejamentos.length === 0) { setContagens({}); return; }
-    const ids = planejamentos.map(p => p.id);
-    supabase.from('planos_aula').select('planejamento_id').in('planejamento_id', ids).then(({ data }) => {
-      const c: Record<string, number> = {};
-      (data || []).forEach((r: any) => { if (r.planejamento_id) c[r.planejamento_id] = (c[r.planejamento_id] || 0) + 1; });
-      setContagens(c);
-    });
+    if (isGestao) {
+      api.get<Perfil[]>('/users').then(lista => {
+        const map: Record<string, Perfil> = {};
+        lista.forEach(p => map[p.id] = p);
+        setPerfis(map);
+      }, () => setPerfis({}));
+    } else if (user) {
+      setPerfis({ [user.id]: { id: user.id, nome: profile?.nome ?? null, email: profile?.email ?? user.email } as Perfil });
+    }
+  }, [isGestao, user?.id, profile?.nome]);
+
+  // Contagem de aulas por planejamento (já vem na lista)
+  useEffect(() => {
+    const c: Record<string, number> = {};
+    planejamentos.forEach(p => { c[p.id] = p.aulas_count ?? 0; });
+    setContagens(c);
   }, [planejamentos]);
 
   // Recarregar quando reaberto
@@ -220,18 +224,17 @@ function DialogCriar({ open, onClose, disciplinas, turmas, onCreated }: {
   const criar = async () => {
     if (!user || !turma || !bimestre) return;
     setSalvando(true);
-    // tenta achar existente
-    let qEx = supabase.from('planejamentos_bimestrais').select('*')
-      .eq('user_id', user.id).eq('turma_id', turma).eq('bimestre', Number(bimestre)).eq('ano', ANO_ATUAL);
-    qEx = disciplina ? qEx.eq('disciplina_id', disciplina) : qEx.is('disciplina_id', null);
-    const { data: ex } = await qEx.maybeSingle();
-    if (ex) { onCreated(ex as Planejamento); setSalvando(false); return; }
-    const { data, error } = await supabase.from('planejamentos_bimestrais').insert({
-      user_id: user.id, turma_id: turma, disciplina_id: disciplina || null, bimestre: Number(bimestre), ano: ANO_ATUAL, status: 'rascunho',
-    }).select('*').single();
-    setSalvando(false);
-    if (error) { toast({ title: 'Erro', description: error.message, variant: 'destructive' }); return; }
-    onCreated(data as Planejamento);
+    try {
+      // O backend devolve o planejamento que já existe (mesma turma, matéria, bimestre e ano) ou cria um rascunho.
+      const data = await api.post<Planejamento>('/planejamentos', {
+        turma_id: turma, disciplina_id: disciplina || null, bimestre: Number(bimestre), ano: ANO_ATUAL,
+      });
+      onCreated(data);
+    } catch (err) {
+      toast({ title: 'Erro', description: mensagemDeErro(err), variant: 'destructive' });
+    } finally {
+      setSalvando(false);
+    }
   };
 
   return (

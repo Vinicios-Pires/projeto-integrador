@@ -144,6 +144,9 @@ async function main() {
     console.log('\n— Excluir —');
     // Uma aula ligada ao planejamento continua existindo depois de excluí-lo.
     const aula = await prisma.planos_aula.create({ data: { user_id: profA.id, turma_id: turma.id, data_aula: new Date('2026-03-02'), planejamento_id: p2.json.id } });
+    const comAula = (await call('GET', '/planejamentos', { token: tA })).json as (Planejamento & { aulas_count: number })[];
+    check(comAula.find((p) => p.id === p2.json.id)?.aulas_count === 1 && comAula.find((p) => p.id === r1.id)?.aulas_count === 0,
+      'A lista traz quantas aulas cada planejamento tem');
     check(codigo(await call('DELETE', `/planejamentos/${p2.json.id}`, { token: tB })) === 'PLANEJAMENTO_NAO_ENCONTRADO', 'Professor B não exclui');
     check(codigo(await call('DELETE', `/planejamentos/${p2.json.id}`, { token: tCoord })) === 'SEM_PERMISSAO', 'Gestão não exclui');
     check((await call('DELETE', `/planejamentos/${p2.json.id}`, { token: tA })).status === 204, 'Dono exclui o rascunho');

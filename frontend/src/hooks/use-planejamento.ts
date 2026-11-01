@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { api } from '@/lib/api';
 
 export type StatusPlanejamento = 'rascunho' | 'aguardando_validacao' | 'validado';
 
@@ -14,6 +14,8 @@ export type Planejamento = {
   validado_por: string | null;
   validado_em: string | null;
   observacao_validacao: string | null;
+  /** Quantas aulas a planilha tem (vem do backend). */
+  aulas_count?: number;
 };
 
 export type LinhaAula = {
@@ -38,14 +40,15 @@ export function usePlanejamentos(filtros?: { bimestre?: number; ano?: number; tu
 
   const load = useCallback(async () => {
     setLoading(true);
-    let q = supabase.from('planejamentos_bimestrais').select('*').order('ano', { ascending: false }).order('bimestre');
-    if (filtros?.bimestre) q = q.eq('bimestre', filtros.bimestre);
-    if (filtros?.ano) q = q.eq('ano', filtros.ano);
-    if (filtros?.turma_id) q = q.eq('turma_id', filtros.turma_id);
-    if (filtros?.disciplina_id) q = q.eq('disciplina_id', filtros.disciplina_id);
-    if (filtros?.user_id) q = q.eq('user_id', filtros.user_id);
-    const { data } = await q;
-    setData((data as Planejamento[]) || []);
+    // Ano mais recente primeiro; cada um já vem com aulas_count.
+    const data = await api.get<Planejamento[]>('/planejamentos', {
+      bimestre: filtros?.bimestre,
+      ano: filtros?.ano,
+      turma_id: filtros?.turma_id,
+      disciplina_id: filtros?.disciplina_id,
+      user_id: filtros?.user_id,
+    }).catch(() => []);
+    setData(data);
     setLoading(false);
   }, [filtros?.bimestre, filtros?.ano, filtros?.turma_id, filtros?.disciplina_id, filtros?.user_id]);
 
@@ -60,12 +63,9 @@ export function useLinhasPlanejamento(planejamentoId: string | null) {
   const load = useCallback(async () => {
     if (!planejamentoId) { setLinhas([]); setLoading(false); return; }
     setLoading(true);
-    const { data } = await supabase
-      .from('planos_aula')
-      .select('id,planejamento_id,user_id,turma_id,disciplina_id,bimestre,data_aula,numero_aulas,aprendizagem_essencial,conteudo,desenvolvimento,recursos,avaliacao_aprendizagem')
-      .eq('planejamento_id', planejamentoId)
-      .order('data_aula');
-    setLinhas((data as LinhaAula[]) || []);
+    // Em ordem de data.
+    const data = await api.get<LinhaAula[]>('/planos-aula', { planejamento_id: planejamentoId }).catch(() => []);
+    setLinhas(data);
     setLoading(false);
   }, [planejamentoId]);
 
